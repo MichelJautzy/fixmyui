@@ -1,0 +1,4 @@
+node_modules/
+.fixmyui.json
+.env
+*.log

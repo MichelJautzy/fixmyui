@@ -1,0 +1,46 @@
+{
+  "name": "fixmyui-agent",
+  "version": "1.0.0",
+  "description": "FixMyUI agent — connects your staging server to fixmyui.com and lets PMs ship UI changes via Claude Code.",
+  "type": "module",
+  "bin": {
+    "fixmyui": "./bin/fixmyui.js"
+  },
+  "main": "./src/agent/Agent.js",
+  "files": [
+    "bin",
+    "src",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "start": "node bin/fixmyui.js start",
+    "lint": "node --check src/**/*.js"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^7.4.1",
+    "chalk": "^5.4.1",
+    "commander": "^13.1.0",
+    "dotenv": "^16.4.7",
+    "ora": "^8.2.0",
+    "pusher-js": "^8.4.0",
+    "simple-git": "^3.27.0"
+  },
+  "keywords": [
+    "fixmyui",
+    "claude",
+    "ai",
+    "ui",
+    "agent",
+    "pm",
+    "staging"
+  ],
+  "author": "FixMyUI",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MichelJautzy/fixmyui.git"
+  }
+}
