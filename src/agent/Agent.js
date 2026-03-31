@@ -159,7 +159,7 @@ export class Agent {
    */
   #runClaude(jobId, prompt) {
     return new Promise((resolve, reject) => {
-      const runner = new ClaudeRunner(this.#config.repoPath);
+      const runner = new ClaudeRunner(this.#config);
       this.#activeRunner = runner;
 
       runner.on('thinking', async (text) => {

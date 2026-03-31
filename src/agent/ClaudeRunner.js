@@ -1,6 +1,15 @@
 import { spawn } from 'child_process';
 import { EventEmitter } from 'events';
 
+const CLAUDE_PERMISSION_MODES = new Set([
+  'acceptEdits',
+  'bypassPermissions',
+  'default',
+  'dontAsk',
+  'plan',
+  'auto',
+]);
+
 /**
  * Spawns the `claude` CLI and parses its `--output-format stream-json` output.
  *
@@ -15,13 +24,16 @@ import { EventEmitter } from 'events';
 export class ClaudeRunner extends EventEmitter {
   #proc = null;
   #repoPath;
+  #permissionMode;
 
   /**
-   * @param {string} repoPath  Working directory for Claude (project root)
+   * @param {import('../Config.js').Config} config
    */
-  constructor(repoPath) {
+  constructor(config) {
     super();
-    this.#repoPath = repoPath;
+    this.#repoPath = config.repoPath;
+    const mode = config.claudePermissionMode ?? 'acceptEdits';
+    this.#permissionMode = CLAUDE_PERMISSION_MODES.has(mode) ? mode : 'acceptEdits';
   }
 
   /**
@@ -67,11 +79,13 @@ export class ClaudeRunner extends EventEmitter {
    * @param {string} prompt
    */
   run(prompt) {
-    // `-p` = non-interactive. stream-json requires `--verbose` (Claude Code CLI enforces this).
+    // `-p` = non-interactive. stream-json requires `--verbose`.
+    // `--permission-mode` avoids blocking on "approve file edit?" when there is no TTY (FixMyUI agent).
     const args = [
       '-p', prompt,
       '--output-format', 'stream-json',
       '--verbose',
+      '--permission-mode', this.#permissionMode,
     ];
 
     this.#proc = spawn('claude', args, {

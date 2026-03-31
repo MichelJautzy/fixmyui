@@ -69,6 +69,7 @@ program
     row('Branch prefix',   config.branchPrefix);
     row('Auto-push',       config.autoPush ? 'yes' : 'no');
     row('Preview URL',     config.previewUrlTemplate ?? chalk.gray('not set'));
+    row('Claude perms',    config.claudePermissionMode ?? 'acceptEdits');
     console.log('');
   });
 

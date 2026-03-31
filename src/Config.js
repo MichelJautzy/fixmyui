@@ -34,6 +34,8 @@ export function loadConfig(cwd = process.cwd()) {
     reverbHost:         env('FIXMYUI_REVERB_HOST')          ?? fileConfig.reverbHost         ?? null,
     reverbPort:         envInt('FIXMYUI_REVERB_PORT')       ?? fileConfig.reverbPort         ?? null,
     reverbScheme:       env('FIXMYUI_REVERB_SCHEME')        ?? fileConfig.reverbScheme       ?? null,
+    // Claude Code: headless agent cannot answer permission prompts — auto-approve file edits (trusted staging only)
+    claudePermissionMode: env('FIXMYUI_CLAUDE_PERMISSION_MODE') ?? fileConfig.claudePermissionMode ?? 'acceptEdits',
   };
 
   config.apiUrl = config.apiUrl.replace(/\/$/, '');
@@ -121,4 +123,5 @@ function envInt(key) {
  * @property {string|null}  reverbHost
  * @property {number|null}  reverbPort
  * @property {string|null}  reverbScheme
+ * @property {string}       claudePermissionMode  acceptEdits | dontAsk | auto | plan | default | bypassPermissions
  */

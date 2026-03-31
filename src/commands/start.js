@@ -32,6 +32,7 @@ export async function runStart() {
   console.log(chalk.gray(`  Branch     : ${config.branchPrefix}/<job_id>`));
   console.log(chalk.gray(`  Auto-push  : ${config.autoPush ? 'yes' : 'no'}`));
   console.log(chalk.gray(`  Reverb     : ${config.reverbScheme ?? 'http'}://${config.reverbHost ?? '—'}:${config.reverbPort ?? '—'} (key …${String(config.reverbAppKey).slice(-6)})`));
+  console.log(chalk.gray(`  Claude     : permission-mode=${config.claudePermissionMode ?? 'acceptEdits'}`));
   console.log('');
 
   const agent = new Agent(config, {

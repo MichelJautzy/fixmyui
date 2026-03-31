@@ -59,6 +59,7 @@ pm2 startup
 | `branchPrefix` | `FIXMYUI_BRANCH_PREFIX` | `fixmyui` | Git branch prefix per job |
 | `autoPush` | `FIXMYUI_AUTO_PUSH` | `true` | Push branch after commit |
 | `previewUrlTemplate` | `FIXMYUI_PREVIEW_URL_TEMPLATE` | — | e.g. `https://staging.myapp.com?branch={branch}` |
+| `claudePermissionMode` | `FIXMYUI_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Headless: auto-approve file edits (see Security) |
 
 ---
 
@@ -99,6 +100,7 @@ Agent receives job
 - The `agentSecret` (`fmui_sk_xxx`) is stored only on your server. The SaaS stores only its `sha256` hash.
 - The WebSocket channel is private — authenticated per session with an HMAC signature.
 - Add `.fixmyui.json` to your `.gitignore` (or use env vars) to avoid committing the secret.
+- **Claude permission mode:** the agent runs with `--permission-mode acceptEdits` by default so Claude Code can write files **without a human at the terminal**. Use only on **trusted** staging/build hosts. For stricter control use `default` or `plan` (Claude may stall waiting for approval). `bypassPermissions` is the most permissive — sandbox only.
 
 ---
 
@@ -110,3 +112,4 @@ Agent receives job
 | `Unauthorized` on connect | Check your `agentSecret` matches the one in the FixMyUI dashboard |
 | Jobs not received | Run `fixmyui test` to verify WebSocket connectivity |
 | Push fails | Ensure the server has push access to the repo (`git push` manually) |
+| "approve file edit permission" / edits not applied | Normal in default Claude mode without a TTY. The agent uses `acceptEdits` by default; set `FIXMYUI_CLAUDE_PERMISSION_MODE=acceptEdits` or add `"claudePermissionMode": "acceptEdits"` to `.fixmyui.json` |
