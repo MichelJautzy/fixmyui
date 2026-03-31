@@ -67,10 +67,10 @@ export class ClaudeRunner extends EventEmitter {
    * @param {string} prompt
    */
   run(prompt) {
+    // Non-interactive mode is `-p` / `--print` only; there is no --no-interactive in Claude Code CLI.
     const args = [
       '-p', prompt,
       '--output-format', 'stream-json',
-      '--no-interactive',
     ];
 
     this.#proc = spawn('claude', args, {
