@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { execSync } from 'child_process';
 import { loadConfig, validateConfig } from '../Config.js';
+import { ensureReverbConfig } from '../ensureReverbConfig.js';
 import { SaasClient } from '../SaasClient.js';
 import { GitHelper } from '../agent/GitHelper.js';
 
@@ -47,9 +48,15 @@ export async function runTest() {
   process.stdout.write('  SaaS API       ');
   const saas = new SaasClient(config);
 
+  let configWithReverb;
   try {
     const me = await saas.me();
     ok(`installation "${me.name}" (ID: ${me.installation_id})`);
+    if (!me.reverb?.key && !config.reverbAppKey) {
+      fail('SaaS /me missing reverb block — deploy latest FixMyUI SaaS or set FIXMYUI_REVERB_APP_KEY');
+      process.exit(1);
+    }
+    configWithReverb = await ensureReverbConfig(config);
   } catch (err) {
     fail(err.message);
     process.exit(1);
@@ -58,7 +65,7 @@ export async function runTest() {
   // ── 5. Reverb WebSocket ───────────────────────────────────────────────────
   process.stdout.write('  Reverb WS      ');
   try {
-    await testReverbConnection(config);
+    await testReverbConnection(configWithReverb);
     ok('connected');
   } catch (err) {
     fail(`${err.message} (is the Reverb server running?)`);

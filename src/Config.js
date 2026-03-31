@@ -29,6 +29,11 @@ export function loadConfig(cwd = process.cwd()) {
     branchPrefix:       env('FIXMYUI_BRANCH_PREFIX')        ?? fileConfig.branchPrefix        ?? 'fixmyui',
     autoPush:           envBool('FIXMYUI_AUTO_PUSH')        ?? fileConfig.autoPush            ?? true,
     previewUrlTemplate: env('FIXMYUI_PREVIEW_URL_TEMPLATE') ?? fileConfig.previewUrlTemplate  ?? null,
+    // Pusher/Reverb client (REVERB_APP_KEY — not REVERB_APP_ID). Fetched from GET /api/fixmyui/agent/me if omitted.
+    reverbAppKey:       env('FIXMYUI_REVERB_APP_KEY')       ?? fileConfig.reverbAppKey       ?? null,
+    reverbHost:         env('FIXMYUI_REVERB_HOST')          ?? fileConfig.reverbHost         ?? null,
+    reverbPort:         envInt('FIXMYUI_REVERB_PORT')       ?? fileConfig.reverbPort         ?? null,
+    reverbScheme:       env('FIXMYUI_REVERB_SCHEME')        ?? fileConfig.reverbScheme       ?? null,
   };
 
   config.apiUrl = config.apiUrl.replace(/\/$/, '');
@@ -97,6 +102,13 @@ function envBool(key) {
   return v.toLowerCase() !== 'false' && v !== '0';
 }
 
+function envInt(key) {
+  const v = env(key);
+  if (v === undefined) return undefined;
+  const n = parseInt(v, 10);
+  return Number.isFinite(n) ? n : undefined;
+}
+
 /**
  * @typedef {object} Config
  * @property {string}       apiUrl
@@ -105,4 +117,8 @@ function envBool(key) {
  * @property {string}       branchPrefix
  * @property {boolean}      autoPush
  * @property {string|null}  previewUrlTemplate
+ * @property {string|null}  reverbAppKey
+ * @property {string|null}  reverbHost
+ * @property {number|null}  reverbPort
+ * @property {string|null}  reverbScheme
  */

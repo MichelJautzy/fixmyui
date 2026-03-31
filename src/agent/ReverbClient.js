@@ -30,15 +30,21 @@ export class ReverbClient extends EventEmitter {
    * @param {string} installationId  The numeric installation ID from the dashboard
    */
   connect(installationId) {
-    const { apiUrl, agentSecret } = this.#config;
+    const { apiUrl, agentSecret, reverbAppKey, reverbHost, reverbPort, reverbScheme } = this.#config;
 
-    // Derive Reverb WS host/port from apiUrl
-    const url    = new URL(apiUrl);
-    const wsHost = url.hostname;
-    const useTLS = url.protocol === 'https:';
-    const wsPort = useTLS ? 443 : 8080;
+    // First argument must be REVERB_APP_KEY (public client key), NOT REVERB_APP_ID.
+    if (!reverbAppKey) {
+      this.emit('error', new Error('Missing reverbAppKey. Run `fixmyui init` again or set FIXMYUI_REVERB_APP_KEY.'));
+      return;
+    }
 
-    this.#pusher = new Pusher('fixmyui', {
+    const url = new URL(apiUrl);
+    const scheme = reverbScheme ?? (url.protocol === 'https:' ? 'https' : 'http');
+    const useTLS = scheme === 'https';
+    const wsHost = reverbHost ?? url.hostname;
+    const wsPort = reverbPort ?? (useTLS ? 443 : 8080);
+
+    this.#pusher = new Pusher(reverbAppKey, {
       wsHost,
       wsPort,
       wssPort:           wsPort,

@@ -1,5 +1,6 @@
 import chalk from 'chalk';
 import { loadConfig, validateConfig } from '../Config.js';
+import { ensureReverbConfig } from '../ensureReverbConfig.js';
 import { Agent } from '../agent/Agent.js';
 
 export async function runStart() {
@@ -8,6 +9,7 @@ export async function runStart() {
   try {
     config = loadConfig();
     validateConfig(config);
+    config = await ensureReverbConfig(config);
   } catch (err) {
     console.error(chalk.red(`\n  Config error: ${err.message}\n`));
     process.exit(1);
@@ -29,6 +31,7 @@ export async function runStart() {
   console.log(chalk.gray(`  Repo       : ${config.repoPath}`));
   console.log(chalk.gray(`  Branch     : ${config.branchPrefix}/<job_id>`));
   console.log(chalk.gray(`  Auto-push  : ${config.autoPush ? 'yes' : 'no'}`));
+  console.log(chalk.gray(`  Reverb     : ${config.reverbScheme ?? 'http'}://${config.reverbHost ?? '—'}:${config.reverbPort ?? '—'} (key …${String(config.reverbAppKey).slice(-6)})`));
   console.log('');
 
   const agent = new Agent(config, {

@@ -45,12 +45,17 @@ export async function runInit() {
   const spinner = (await import('ora')).default('Verifying credentials…').start();
   let installationId;
   let installationName;
+  let me;
 
   try {
     const client = new SaasClient({ apiUrl: apiUrl.replace(/\/$/, ''), agentSecret });
-    const me = await client.me();
+    me = await client.me();
     installationId   = me.installation_id;
     installationName = me.name;
+    if (!me.reverb?.key) {
+      spinner.fail(chalk.red('SaaS /me response missing Reverb config — update FixMyUI SaaS.'));
+      process.exit(1);
+    }
     spinner.succeed(chalk.green(`Connected — installation: "${installationName}" (ID: ${installationId})`));
   } catch (err) {
     spinner.fail(chalk.red(`Authentication failed: ${err.message}`));
@@ -109,6 +114,10 @@ export async function runInit() {
     branchPrefix,
     autoPush,
     previewUrlTemplate: previewUrlTemplate || null,
+    reverbAppKey:     me.reverb.key,
+    reverbHost:       me.reverb.host,
+    reverbPort:       me.reverb.port,
+    reverbScheme:     me.reverb.scheme,
   };
 
   writeConfig(configData, cwd);

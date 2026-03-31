@@ -3,6 +3,19 @@ import { ClaudeRunner } from './ClaudeRunner.js';
 import { GitHelper } from './GitHelper.js';
 import { SaasClient } from '../SaasClient.js';
 
+function formatWsError(err) {
+  if (err == null) return 'unknown';
+  if (typeof err === 'string') return err;
+  if (err instanceof Error && err.message) return err.message;
+  if (err?.message) return err.message;
+  if (err?.error?.message) return err.error.message;
+  try {
+    return JSON.stringify(err);
+  } catch {
+    return String(err);
+  }
+}
+
 /**
  * Main FixMyUI agent.
  *
@@ -49,7 +62,7 @@ export class Agent {
     });
 
     this.#reverb.on('error', (err) => {
-      this.log(`[fixmyui] WebSocket error: ${err.message}`);
+      this.log(`[fixmyui] WebSocket error: ${formatWsError(err)}`);
     });
 
     this.#reverb.on('job', (payload) => {
