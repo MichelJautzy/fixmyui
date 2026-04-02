@@ -78,13 +78,16 @@ export class Agent {
    * @param {object} payload  The new-job event payload from Reverb
    */
   async handleJob(payload) {
-    const { job_id, message, page_url, html_context, history = [] } = payload;
+    const { job_id, message, page_url, html_context, element_xpath, history = [] } = payload;
     const {
       branchStrategy, branchPrefix, branchName: fixedBranchName,
       autoPush, previewUrlTemplate, repoPath, postCommands,
     } = this.#config;
 
     this.log(`\n[fixmyui] Job ${job_id} received: "${message}"`);
+    if (page_url) this.log(`  [context] Page: ${page_url}`);
+    if (element_xpath) this.log(`  [context] XPath: ${element_xpath}`);
+    if (html_context) this.log(`  [context] HTML: ${html_context.slice(0, 120)}${html_context.length > 120 ? '…' : ''}`);
 
     let activeBranch = null;
 
@@ -115,7 +118,7 @@ export class Agent {
 
       // ── 2. Build Claude prompt ──────────────────────────────────────────
       const prompt = ClaudeRunner.buildPrompt({
-        pm_message: message, page_url, html_context, history,
+        pm_message: message, page_url, html_context, element_xpath, history,
         prompt_rules: this.#config.promptRules,
       });
 

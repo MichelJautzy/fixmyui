@@ -43,6 +43,7 @@ export class ClaudeRunner extends EventEmitter {
    * @param {string}   job.pm_message
    * @param {string}   [job.page_url]
    * @param {string}   [job.html_context]  Outer HTML of the element the PM selected
+   * @param {string}   [job.element_xpath] Full XPath of the selected element in the page DOM
    * @param {string}   [job.prompt_rules]  Admin-defined guardrails
    * @param {Array}    [job.history]  [{message, result, branch}, ...]
    * @returns {string}
@@ -69,12 +70,17 @@ export class ClaudeRunner extends EventEmitter {
       lines.push(`Page: ${job.page_url}`);
     }
 
-    if (job.html_context) {
+    if (job.html_context || job.element_xpath) {
       lines.push('');
-      lines.push('Target element HTML (selected by PM on the page):');
-      lines.push('```html');
-      lines.push(job.html_context);
-      lines.push('```');
+      lines.push('Target element (selected by PM on the page):');
+      if (job.element_xpath) {
+        lines.push(`XPath: ${job.element_xpath}`);
+      }
+      if (job.html_context) {
+        lines.push('```html');
+        lines.push(job.html_context);
+        lines.push('```');
+      }
       lines.push('');
     }
 
