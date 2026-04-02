@@ -1,0 +1,30 @@
+---
+description: Règles de navigation et maintenance de la documentation agents/
+globs: agents/**/*.md
+alwaysApply: true
+---
+
+# Documentation Agents — Règles
+
+## Démarrer une session
+
+Toujours lire dans cet ordre :
+1. `agents/_truth.md` — règles intangibles, ne jamais modifier
+2. `agents/_map.md` — index de toute la doc, charger les fichiers pertinents à la tâche
+
+## Règles absolues
+
+- Ne **jamais** modifier `agents/_truth.md`
+- Ne **jamais** créer de fichier `.md` sans demande explicite de l'utilisateur
+- Ne **jamais** créer de script `.sh` sans autorisation explicite
+
+## Mettre à jour la doc
+
+Après chaque modification de code significative, mettre à jour le fichier doc correspondant :
+
+- Agent core modifié (`Agent.js`, `ClaudeRunner.js`, `ReverbClient.js`, `GitHelper.js`) → `agents/core/agent.md`
+- SaasClient modifié → `agents/integrations/saas-api.md`
+- Commande CLI ajoutée/modifiée → `agents/cli/commands.md`
+- Config modifiée (`Config.js`) → `agents/architecture/overview.md`
+- Structure projet / dépendances → `agents/architecture/overview.md`
+- Fichier agents/ ajouté ou supprimé → **mettre à jour `agents/_map.md`**

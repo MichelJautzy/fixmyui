@@ -1,3 +1,4 @@
+import { spawn } from 'child_process';
 import { ReverbClient } from './ReverbClient.js';
 import { ClaudeRunner } from './ClaudeRunner.js';
 import { GitHelper } from './GitHelper.js';
@@ -29,9 +30,7 @@ export class Agent {
   #saas;
   #reverb;
   #git;
-  /** Branch checked out before the job (to restore on failure) */
   #originalBranch = null;
-  /** Currently running ClaudeRunner (for graceful kill on shutdown) */
   #activeRunner = null;
 
   /**
@@ -80,32 +79,48 @@ export class Agent {
    */
   async handleJob(payload) {
     const { job_id, message, page_url, history = [] } = payload;
-    const { branchPrefix, autoPush, previewUrlTemplate, repoPath } = this.#config;
-
-    const branchSuffix = job_id.slice(0, 8);
-    const branchName   = `${branchPrefix}/${branchSuffix}`;
+    const {
+      branchStrategy, branchPrefix, branchName: fixedBranchName,
+      autoPush, previewUrlTemplate, repoPath, postCommands,
+    } = this.#config;
 
     this.log(`\n[fixmyui] Job ${job_id} received: "${message}"`);
 
+    let activeBranch = null;
+
     try {
-      // ── 0. Verify this is a git repo ──────────────────────────────────────
+      // ── 0. Verify git repo ────────────────────────────────────────────────
       await this.#git.assertIsRepo();
       this.#originalBranch = await this.#git.currentBranch();
 
-      // ── 1. Create branch ──────────────────────────────────────────────────
-      await this.#saas.progress(job_id, `Creating branch ${branchName}…`, 'info');
-      await this.#git.checkoutBranch(branchName);
-      this.log(`[fixmyui] Checked out ${branchName}`);
+      // ── 1. Branch strategy ────────────────────────────────────────────────
+      if (branchStrategy === 'same-branch') {
+        activeBranch = fixedBranchName || 'fixmyui';
+        await this.#saas.progress(job_id, `Switching to branch ${activeBranch}…`, 'info');
+        await this.#git.checkoutOrCreate(activeBranch);
+        this.log(`[fixmyui] On branch ${activeBranch}`);
 
-      // ── 2. Build Claude prompt ────────────────────────────────────────────
+      } else if (branchStrategy === 'local-branch') {
+        activeBranch = this.#originalBranch;
+        await this.#saas.progress(job_id, `Staying on branch ${activeBranch}`, 'info');
+        this.log(`[fixmyui] Staying on ${activeBranch}`);
+
+      } else {
+        const branchSuffix = job_id.slice(0, 8);
+        activeBranch = `${branchPrefix}/${branchSuffix}`;
+        await this.#saas.progress(job_id, `Creating branch ${activeBranch}…`, 'info');
+        await this.#git.checkoutBranch(activeBranch);
+        this.log(`[fixmyui] Checked out ${activeBranch}`);
+      }
+
+      // ── 2. Build Claude prompt ──────────────────────────────────────────
       const prompt = ClaudeRunner.buildPrompt({ pm_message: message, page_url, history });
 
-      // ── 3. Run Claude with streaming progress ─────────────────────────────
+      // ── 3. Run Claude with streaming progress ───────────────────────────
       await this.#saas.progress(job_id, 'Claude is starting…', 'info');
-
       const resultText = await this.#runClaude(job_id, prompt, repoPath);
 
-      // ── 4. Commit changes ─────────────────────────────────────────────────
+      // ── 4. Commit changes ───────────────────────────────────────────────
       const isDirty = await this.#git.isDirty();
       let commitHash = null;
 
@@ -119,22 +134,29 @@ export class Agent {
         await this.#saas.progress(job_id, 'No file changes detected.', 'info');
       }
 
-      // ── 5. Push ───────────────────────────────────────────────────────────
+      // ── 5. Push ─────────────────────────────────────────────────────────
       if (autoPush && isDirty) {
-        await this.#saas.progress(job_id, `Pushing ${branchName}…`, 'info');
-        await this.#git.push(branchName);
-        this.log(`[fixmyui] Pushed ${branchName}`);
+        await this.#saas.progress(job_id, `Pushing ${activeBranch}…`, 'info');
+        await this.#git.push(activeBranch);
+        this.log(`[fixmyui] Pushed ${activeBranch}`);
       }
 
-      // ── 6. Build preview URL ──────────────────────────────────────────────
+      // ── 6. Post-completion commands ─────────────────────────────────────
+      if (postCommands && postCommands.length > 0) {
+        for (const cmd of postCommands) {
+          await this.#runPostCommand(job_id, cmd, repoPath);
+        }
+      }
+
+      // ── 7. Build preview URL ────────────────────────────────────────────
       const previewUrl = previewUrlTemplate
-        ? previewUrlTemplate.replace('{branch}', branchName)
+        ? previewUrlTemplate.replace('{branch}', activeBranch)
         : null;
 
-      // ── 7. Report success ─────────────────────────────────────────────────
+      // ── 8. Report success ───────────────────────────────────────────────
       await this.#saas.complete(job_id, {
-        result_message: resultText || `Changes applied on branch ${branchName}.`,
-        branch:         isDirty ? branchName : null,
+        result_message: resultText || `Changes applied on branch ${activeBranch}.`,
+        branch:         isDirty ? activeBranch : null,
         preview_url:    previewUrl,
       });
 
@@ -142,12 +164,9 @@ export class Agent {
 
     } catch (err) {
       this.log(`[fixmyui] Job ${job_id} failed: ${err.message}`);
-
-      // Best-effort: report failure to SaaS
       await this.#saas.fail(job_id, err.message).catch(() => {});
 
-      // Best-effort: return to original branch
-      if (this.#originalBranch) {
+      if (this.#originalBranch && branchStrategy !== 'local-branch') {
         await this.#git.checkoutExisting(this.#originalBranch).catch(() => {});
       }
     }
@@ -189,6 +208,60 @@ export class Agent {
       });
 
       runner.run(prompt);
+    });
+  }
+
+  /**
+   * Run a single post-completion shell command, streaming output as progress.
+   * @param {string} jobId
+   * @param {{label: string, command: string}} cmd
+   * @param {string} cwd
+   * @returns {Promise<void>}
+   */
+  #runPostCommand(jobId, cmd, cwd) {
+    return new Promise(async (resolve, reject) => {
+      const label = cmd.label || cmd.command;
+      this.log(`[fixmyui] Running post-command: ${label}`);
+      await this.#saas.progress(jobId, `Running: ${label}`, 'shell').catch(() => {});
+
+      const proc = spawn(cmd.command, {
+        shell: true,
+        cwd,
+        env: process.env,
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+
+      proc.stdout.setEncoding('utf8');
+      proc.stdout.on('data', async (chunk) => {
+        const text = chunk.trim();
+        if (text) {
+          this.log(`  [shell] ${text.slice(0, 200)}`);
+          await this.#saas.progress(jobId, text.slice(0, 900), 'shell').catch(() => {});
+        }
+      });
+
+      proc.stderr.setEncoding('utf8');
+      proc.stderr.on('data', async (chunk) => {
+        const text = chunk.trim();
+        if (text) {
+          this.log(`  [shell:err] ${text.slice(0, 200)}`);
+          await this.#saas.progress(jobId, `[stderr] ${text.slice(0, 800)}`, 'shell').catch(() => {});
+        }
+      });
+
+      proc.on('error', (err) => {
+        this.log(`[fixmyui] Post-command error: ${err.message}`);
+        reject(err);
+      });
+
+      proc.on('close', async (code) => {
+        if (code !== 0) {
+          const msg = `Post-command "${label}" exited with code ${code}`;
+          this.log(`[fixmyui] ${msg}`);
+          await this.#saas.progress(jobId, msg, 'shell').catch(() => {});
+        }
+        resolve();
+      });
     });
   }
 

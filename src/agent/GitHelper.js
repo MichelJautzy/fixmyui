@@ -71,9 +71,21 @@ export class GitHelper {
   }
 
   /**
-   * Return to the previous branch (HEAD~).
-   * Safe to call even if no branch was checked out.
-   * @param {string} targetBranch  Branch to return to (e.g. 'main')
+   * Checkout a branch if it exists, otherwise create it.
+   * @param {string} branchName
+   * @returns {Promise<void>}
+   */
+  async checkoutOrCreate(branchName) {
+    try {
+      await this.#git.checkout(branchName);
+    } catch {
+      await this.#git.checkoutLocalBranch(branchName);
+    }
+  }
+
+  /**
+   * Checkout an existing branch.
+   * @param {string} targetBranch
    */
   async checkoutExisting(targetBranch) {
     await this.#git.checkout(targetBranch);

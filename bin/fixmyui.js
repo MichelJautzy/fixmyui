@@ -32,6 +32,15 @@ program
     await runStart().catch(handleError);
   });
 
+// ── reset ─────────────────────────────────────────────────────────────────────
+program
+  .command('reset')
+  .description('Remove .fixmyui.json — run fixmyui init afterwards')
+  .action(async () => {
+    const { runReset } = await import('../src/commands/reset.js');
+    runReset();
+  });
+
 // ── test ──────────────────────────────────────────────────────────────────────
 program
   .command('test')

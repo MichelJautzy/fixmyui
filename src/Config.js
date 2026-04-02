@@ -26,15 +26,16 @@ export function loadConfig(cwd = process.cwd()) {
     agentSecret:        env('FIXMYUI_AGENT_SECRET')         ?? fileConfig.agentSecret         ?? null,
     installationId:     env('FIXMYUI_INSTALLATION_ID')      ?? fileConfig.installationId      ?? null,
     repoPath:           resolve(cwd, fileConfig.repoPath    ?? '.'),
+    branchStrategy:     env('FIXMYUI_BRANCH_STRATEGY')      ?? fileConfig.branchStrategy      ?? 'new-branch',
     branchPrefix:       env('FIXMYUI_BRANCH_PREFIX')        ?? fileConfig.branchPrefix        ?? 'fixmyui',
+    branchName:         env('FIXMYUI_BRANCH_NAME')          ?? fileConfig.branchName          ?? 'fixmyui',
     autoPush:           envBool('FIXMYUI_AUTO_PUSH')        ?? fileConfig.autoPush            ?? true,
+    postCommands:       fileConfig.postCommands             ?? [],
     previewUrlTemplate: env('FIXMYUI_PREVIEW_URL_TEMPLATE') ?? fileConfig.previewUrlTemplate  ?? null,
-    // Pusher/Reverb client (REVERB_APP_KEY — not REVERB_APP_ID). Fetched from GET /api/fixmyui/agent/me if omitted.
     reverbAppKey:       env('FIXMYUI_REVERB_APP_KEY')       ?? fileConfig.reverbAppKey       ?? null,
     reverbHost:         env('FIXMYUI_REVERB_HOST')          ?? fileConfig.reverbHost         ?? null,
     reverbPort:         envInt('FIXMYUI_REVERB_PORT')       ?? fileConfig.reverbPort         ?? null,
     reverbScheme:       env('FIXMYUI_REVERB_SCHEME')        ?? fileConfig.reverbScheme       ?? null,
-    // Claude Code: headless agent cannot answer permission prompts — auto-approve file edits (trusted staging only)
     claudePermissionMode: env('FIXMYUI_CLAUDE_PERMISSION_MODE') ?? fileConfig.claudePermissionMode ?? 'acceptEdits',
   };
 
@@ -116,8 +117,11 @@ function envInt(key) {
  * @property {string}       apiUrl
  * @property {string|null}  agentSecret
  * @property {string}       repoPath
- * @property {string}       branchPrefix
+ * @property {string}       branchStrategy       'new-branch' | 'same-branch' | 'local-branch'
+ * @property {string}       branchPrefix         Used when branchStrategy='new-branch'
+ * @property {string}       branchName           Used when branchStrategy='same-branch'
  * @property {boolean}      autoPush
+ * @property {Array<{label:string, command:string}>} postCommands  Shell commands to run after Claude finishes
  * @property {string|null}  previewUrlTemplate
  * @property {string|null}  reverbAppKey
  * @property {string|null}  reverbHost

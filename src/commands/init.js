@@ -1,6 +1,6 @@
-import { input, password, confirm, select } from '@inquirer/prompts';
+import { input, password, confirm } from '@inquirer/prompts';
 import chalk from 'chalk';
-import { writeConfig, loadConfig } from '../Config.js';
+import { writeConfig } from '../Config.js';
 import { SaasClient } from '../SaasClient.js';
 import { GitHelper } from '../agent/GitHelper.js';
 import { existsSync } from 'fs';
@@ -13,7 +13,6 @@ export async function runInit() {
 
   const cwd = process.cwd();
 
-  // Warn if a config already exists
   if (existsSync(resolve(cwd, '.fixmyui.json'))) {
     const overwrite = await confirm({
       message: chalk.yellow('.fixmyui.json already exists. Overwrite?'),
@@ -41,7 +40,7 @@ export async function runInit() {
     validate: (v) => v.startsWith('fmui_sk_') || 'Must start with fmui_sk_',
   });
 
-  // ── Step 3: Verify credentials + fetch installation ID ───────────────────
+  // ── Step 3: Verify credentials + fetch remote config ───────────────────
   const spinner = (await import('ora')).default('Verifying credentials…').start();
   let installationId;
   let installationName;
@@ -62,7 +61,7 @@ export async function runInit() {
     process.exit(1);
   }
 
-  // ── Step 4: Repo path ─────────────────────────────────────────────────────
+  // ── Step 4: Repo path (local-only setting) ─────────────────────────────
   const repoPath = await input({
     message: 'Path to the git repository root',
     default: '.',
@@ -78,46 +77,24 @@ export async function runInit() {
     },
   });
 
-  // ── Step 5: Branch prefix ─────────────────────────────────────────────────
-  const branchPrefix = await input({
-    message: 'Git branch prefix (e.g. fixmyui → fixmyui/abc12345)',
-    default: 'fixmyui',
-    validate: (v) => /^[a-z0-9_/-]+$/i.test(v) || 'Use letters, numbers, hyphens, slashes or underscores',
-  });
+  // ── Merge remote config from dashboard ─────────────────────────────────
+  const remoteConfig = me.config ?? {};
 
-  // ── Step 6: Auto-push ─────────────────────────────────────────────────────
-  const autoPush = await confirm({
-    message: 'Automatically push branches after Claude commits?',
-    default: true,
-  });
-
-  // ── Step 7: Preview URL template (optional) ───────────────────────────────
-  const wantPreview = await confirm({
-    message: 'Configure a preview URL template? (optional)',
-    default: false,
-  });
-
-  let previewUrlTemplate = null;
-  if (wantPreview) {
-    previewUrlTemplate = await input({
-      message: 'Preview URL template (use {branch} as placeholder)',
-      placeholder: 'https://staging.myapp.com?branch={branch}',
-    });
-  }
-
-  // ── Write config ──────────────────────────────────────────────────────────
   const configData = {
-    apiUrl:           apiUrl.replace(/\/$/, ''),
+    apiUrl:             apiUrl.replace(/\/$/, ''),
     agentSecret,
     installationId,
     repoPath,
-    branchPrefix,
-    autoPush,
-    previewUrlTemplate: previewUrlTemplate || null,
-    reverbAppKey:     me.reverb.key,
-    reverbHost:       me.reverb.host,
-    reverbPort:       me.reverb.port,
-    reverbScheme:     me.reverb.scheme,
+    branchStrategy:     remoteConfig.branch_strategy ?? 'new-branch',
+    branchPrefix:       remoteConfig.branch_name ?? 'fixmyui',
+    branchName:         remoteConfig.branch_name ?? 'fixmyui',
+    autoPush:           remoteConfig.auto_push ?? true,
+    postCommands:       remoteConfig.post_commands ?? [],
+    previewUrlTemplate: remoteConfig.preview_url_template ?? null,
+    reverbAppKey:       me.reverb.key,
+    reverbHost:         me.reverb.host,
+    reverbPort:         me.reverb.port,
+    reverbScheme:       me.reverb.scheme,
   };
 
   writeConfig(configData, cwd);
@@ -125,7 +102,22 @@ export async function runInit() {
   console.log('');
   console.log(chalk.green.bold('  .fixmyui.json created.'));
   console.log('');
+
+  const strategyLabels = {
+    'new-branch': 'New branch per job',
+    'same-branch': `Fixed branch (${configData.branchName})`,
+    'local-branch': 'Stay on current branch',
+  };
+  console.log(chalk.gray('  Remote configuration loaded from dashboard:'));
+  console.log(chalk.gray(`    Branch strategy : ${strategyLabels[configData.branchStrategy] ?? configData.branchStrategy}`));
+  console.log(chalk.gray(`    Auto-push       : ${configData.autoPush ? 'yes' : 'no'}`));
+  console.log(chalk.gray(`    Post-commands   : ${configData.postCommands.length} configured`));
+  if (configData.previewUrlTemplate) {
+    console.log(chalk.gray(`    Preview URL     : ${configData.previewUrlTemplate}`));
+  }
+  console.log('');
   console.log(chalk.gray('  Reminder: add .fixmyui.json to .gitignore to protect your secret.'));
+  console.log(chalk.gray('  Tip: change these settings from the FixMyUI dashboard, then re-run `fixmyui init`.'));
   console.log('');
   console.log('  Next steps:');
   console.log(chalk.cyan('    fixmyui test    ') + chalk.gray('— verify the full connection'));
