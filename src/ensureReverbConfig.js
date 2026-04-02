@@ -20,11 +20,14 @@ export async function ensureReverbConfig(config) {
     );
   }
 
+  const remoteConfig = me.config ?? {};
+
   return {
     ...config,
     reverbAppKey: me.reverb.key,
     reverbHost:   config.reverbHost   ?? me.reverb.host,
     reverbPort:   config.reverbPort   ?? me.reverb.port,
     reverbScheme: config.reverbScheme ?? me.reverb.scheme,
+    promptRules:  remoteConfig.prompt_rules ?? config.promptRules ?? null,
   };
 }

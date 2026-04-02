@@ -91,6 +91,7 @@ export async function runInit() {
     autoPush:           remoteConfig.auto_push ?? true,
     postCommands:       remoteConfig.post_commands ?? [],
     previewUrlTemplate: remoteConfig.preview_url_template ?? null,
+    promptRules:        remoteConfig.prompt_rules ?? null,
     reverbAppKey:       me.reverb.key,
     reverbHost:         me.reverb.host,
     reverbPort:         me.reverb.port,

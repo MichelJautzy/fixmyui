@@ -78,7 +78,7 @@ export class Agent {
    * @param {object} payload  The new-job event payload from Reverb
    */
   async handleJob(payload) {
-    const { job_id, message, page_url, history = [] } = payload;
+    const { job_id, message, page_url, html_context, history = [] } = payload;
     const {
       branchStrategy, branchPrefix, branchName: fixedBranchName,
       autoPush, previewUrlTemplate, repoPath, postCommands,
@@ -114,7 +114,10 @@ export class Agent {
       }
 
       // ── 2. Build Claude prompt ──────────────────────────────────────────
-      const prompt = ClaudeRunner.buildPrompt({ pm_message: message, page_url, history });
+      const prompt = ClaudeRunner.buildPrompt({
+        pm_message: message, page_url, html_context, history,
+        prompt_rules: this.#config.promptRules,
+      });
 
       // ── 3. Run Claude with streaming progress ───────────────────────────
       await this.#saas.progress(job_id, 'Claude is starting…', 'info');

@@ -37,6 +37,7 @@ export function loadConfig(cwd = process.cwd()) {
     reverbPort:         envInt('FIXMYUI_REVERB_PORT')       ?? fileConfig.reverbPort         ?? null,
     reverbScheme:       env('FIXMYUI_REVERB_SCHEME')        ?? fileConfig.reverbScheme       ?? null,
     claudePermissionMode: env('FIXMYUI_CLAUDE_PERMISSION_MODE') ?? fileConfig.claudePermissionMode ?? 'acceptEdits',
+    promptRules:        fileConfig.promptRules ?? null,
   };
 
   config.apiUrl = config.apiUrl.replace(/\/$/, '');
@@ -128,4 +129,5 @@ function envInt(key) {
  * @property {number|null}  reverbPort
  * @property {string|null}  reverbScheme
  * @property {string}       claudePermissionMode  acceptEdits | dontAsk | auto | plan | default | bypassPermissions
+ * @property {string|null}  promptRules           Admin-defined rules prepended to every Claude prompt
  */

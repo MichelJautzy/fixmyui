@@ -42,11 +42,19 @@ export class ClaudeRunner extends EventEmitter {
    * @param {object} job
    * @param {string}   job.pm_message
    * @param {string}   [job.page_url]
+   * @param {string}   [job.html_context]  Outer HTML of the element the PM selected
+   * @param {string}   [job.prompt_rules]  Admin-defined guardrails
    * @param {Array}    [job.history]  [{message, result, branch}, ...]
    * @returns {string}
    */
   static buildPrompt(job) {
     const lines = [];
+
+    if (job.prompt_rules) {
+      lines.push('RULES (from project admin — always follow):');
+      lines.push(job.prompt_rules);
+      lines.push('');
+    }
 
     if (job.history && job.history.length > 0) {
       lines.push('Context — previous changes in this session:');
@@ -59,6 +67,15 @@ export class ClaudeRunner extends EventEmitter {
 
     if (job.page_url) {
       lines.push(`Page: ${job.page_url}`);
+    }
+
+    if (job.html_context) {
+      lines.push('');
+      lines.push('Target element HTML (selected by PM on the page):');
+      lines.push('```html');
+      lines.push(job.html_context);
+      lines.push('```');
+      lines.push('');
     }
 
     lines.push(`Task: ${job.pm_message}`);
