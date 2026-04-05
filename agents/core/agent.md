@@ -106,10 +106,11 @@ Client WebSocket basé sur `pusher-js` pour communiquer avec Laravel Reverb.
 
 ### Connexion
 
-1. Instancie `Pusher` avec la `reverbAppKey`
-2. Configure l'auth du canal privé via `customHandler` → `POST /api/fixmyui/agent/broadcasting/auth`
-3. Souscrit au canal `private-fixmyui.agent.{installationId}`
-4. Écoute l'événement `new-job` broadcasté par le SaaS
+1. Charge le constructeur depuis `pusher-js/node.js` en gérant l’interop CJS/ESM (`default` vs export direct — évite `Pusher is not a constructor` sur certains Node).
+2. Instancie `Pusher` avec la `reverbAppKey`
+3. Configure l'auth du canal privé via `customHandler` → `POST /api/fixmyui/agent/broadcasting/auth`
+4. Souscrit au canal `private-fixmyui.agent.{installationId}`
+5. Écoute l'événement `new-job` broadcasté par le SaaS
 
 ### Paramètres WebSocket
 
