@@ -1,10 +1,11 @@
 import { createRequire } from 'module';
 import { EventEmitter } from 'events';
 
-// pusher-js is a CJS package — use createRequire to avoid ESM/CJS interop issues
-// (`Pusher is not a constructor` on some Node versions with default ESM import).
-const require = createRequire(import.meta.url);
-const Pusher = require('pusher-js/node');
+// pusher-js is CJS — use createRequire to avoid ESM interop issues.
+// The export shape varies by Node version: direct constructor, { default }, or { Pusher }.
+const _require = createRequire(import.meta.url);
+const _mod = _require('pusher-js/node');
+const Pusher = typeof _mod === 'function' ? _mod : _mod.Pusher || _mod.default;
 
 /**
  * WebSocket client for the FixMyUI Reverb server.
