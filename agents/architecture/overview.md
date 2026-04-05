@@ -28,6 +28,8 @@ fixmyui/
 └── agents/                     # Documentation IA
 ```
 
+Le package npm public visé est `fixmyui`, avec un binaire global également nommé `fixmyui`.
+
 ---
 
 ## Flux de Données — Cycle de Vie d'un Job

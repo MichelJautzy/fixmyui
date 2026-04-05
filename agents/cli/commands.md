@@ -52,7 +52,7 @@ Ne modifie pas `.env` ni les variables d’environnement : après un reset, `FIX
 3. Instancie `Agent` et appelle `agent.connect(installationId)`
 4. Gère le graceful shutdown sur `SIGINT` / `SIGTERM` → `agent.disconnect()`
 
-Le processus bloque indéfiniment (daemon). Pour le rendre persistant : `pm2 start $(which fixmyui) --name fixmyui-agent -- start`.
+Le processus bloque indéfiniment (daemon). Pour le rendre persistant : `pm2 start $(which fixmyui) --name fixmyui -- start`.
 
 ---
 

@@ -1,4 +1,4 @@
-# fixmyui-agent
+# fixmyui
 
 The FixMyUI agent runs on your staging server. It listens for PM feedback jobs from [fixmyui.com](https://fixmyui.com), spawns Claude Code to apply the changes, and reports progress back in real time.
 
@@ -16,7 +16,7 @@ The FixMyUI agent runs on your staging server. It listens for PM feedback jobs f
 ## Install
 
 ```bash
-npm install -g fixmyui-agent
+npm install -g fixmyui
 ```
 
 ---
@@ -40,7 +40,7 @@ To keep it running permanently, use pm2:
 
 ```bash
 npm install -g pm2
-pm2 start $(which fixmyui) --name fixmyui-agent -- start
+pm2 start $(which fixmyui) --name fixmyui -- start
 pm2 save
 pm2 startup
 ```
