@@ -1,9 +1,10 @@
-import PusherImport from 'pusher-js/node.js';
+import { createRequire } from 'module';
 import { EventEmitter } from 'events';
 
-// CJS/ESM interop: some Node versions give `{ default: Pusher }` instead of the constructor.
-const PusherCtor =
-  typeof PusherImport === 'function' ? PusherImport : PusherImport?.default;
+// pusher-js is a CJS package — use createRequire to avoid ESM/CJS interop issues
+// (`Pusher is not a constructor` on some Node versions with default ESM import).
+const require = createRequire(import.meta.url);
+const Pusher = require('pusher-js/node');
 
 /**
  * WebSocket client for the FixMyUI Reverb server.
@@ -48,17 +49,7 @@ export class ReverbClient extends EventEmitter {
     const wsHost = reverbHost ?? url.hostname;
     const wsPort = reverbPort ?? (useTLS ? 443 : 8080);
 
-    if (typeof PusherCtor !== 'function') {
-      this.emit(
-        'error',
-        new Error(
-          'pusher-js: could not load WebSocket client (install pusher-js or upgrade fixmyui).'
-        )
-      );
-      return;
-    }
-
-    this.#pusher = new PusherCtor(reverbAppKey, {
+    this.#pusher = new Pusher(reverbAppKey, {
       wsHost,
       wsPort,
       wssPort:           wsPort,
