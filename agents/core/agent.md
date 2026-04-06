@@ -24,22 +24,38 @@ Orchestrateur principal. Relie toutes les pièces : WebSocket → Claude → Git
 | Méthode | Description |
 |---------|-------------|
 | `constructor(config, { log })` | Instancie SaasClient et GitHelper |
-| `connect(installationId)` | Ouvre le WebSocket, écoute les événements `job`, `connected`, `error`, `disconnected` |
-| `handleJob(payload)` | Pipeline complet : branch → Claude → commit → push → report |
+| `connect(installationId)` | Ouvre le WebSocket, écoute les événements `job`, `config-updated`, `connected`, `error`, `disconnected` |
+| `syncRemoteConfig()` | Fetch `GET /api/fixmyui/agent/me` et merge les champs agent-relevant dans `#config` (env vars prioritaires) |
+| `handleJob(payload)` | Pipeline complet : sync config → branch → Claude → commit → push → report |
 | `#runClaude(jobId, prompt)` | Spawne ClaudeRunner, forward les events thinking/action/info vers le SaaS en temps réel |
 | `disconnect()` | Kill le runner actif + déconnecte le WebSocket |
 
+### Sync config distante (push + pull)
+
+La config agent-relevant (`branchStrategy`, `autoPush`, `postCommands`, `previewUrlTemplate`, `promptRules`, `branchName`) est synchronisée depuis le SaaS. Le `.fixmyui.json` ne sert que d'identité locale.
+
+**Précédence** : `env var > remote SaaS > .fixmyui.json > default`
+
+- **Push** : l'event `config-updated` sur le WebSocket met à jour `#config` en temps réel via `applyRemoteConfig()` (module `src/remoteConfig.js`)
+- **Pull** : `syncRemoteConfig()` est appelé au début de chaque `handleJob()` (fallback si le push a été manqué)
+- **Startup** : `ensureReverbConfig()` fetch la config complète au démarrage
+
 ### Pipeline `handleJob()`
 
-1. `git.assertIsRepo()` — vérifie que c'est un repo git
-2. `git.checkoutBranch(branchName)` — crée la branche
-3. `ClaudeRunner.buildPrompt()` — construit le prompt
-4. `#runClaude()` — exécute Claude avec streaming
-5. `git.isDirty()` → `git.addAll()` → `git.commit()` — commit si changements
-6. `git.push()` — push si `autoPush`
-7. `saas.complete()` — rapport de succès
+1. `syncRemoteConfig()` — fetch et merge la config distante
+2. `git.assertIsRepo()` — vérifie que c'est un repo git
+3. `git.checkoutBranch(branchName)` — crée la branche
+4. `ClaudeRunner.buildPrompt()` — construit le prompt
+5. `#runClaude()` — exécute Claude avec streaming
+6. `git.isDirty()` → `git.addAll()` → `git.commit()` — commit si changements
+7. `git.push()` — push si `autoPush`
+8. `saas.complete()` — rapport de succès
 
 En cas d'erreur : `saas.fail()` + `git.checkoutExisting(originalBranch)`
+
+### Version reporting
+
+`start.js` lit `pkg.version` depuis `package.json` et l'ajoute au config object (`config.agentVersion`). `ReverbClient` envoie cette version dans le body de chaque `broadcastAuth` (`agent_version`). Le SaaS la stocke dans `fixmyui_installations.agent_version` et l'utilise pour le version gate du widget (bannière + blocage si version < `FIXMYUI_MIN_NPM_VERSION`).
 
 ### Remontée d'erreurs au SaaS
 
@@ -111,6 +127,7 @@ Client WebSocket basé sur `pusher-js` pour communiquer avec Laravel Reverb.
 | Événement | Payload | Description |
 |-----------|---------|-------------|
 | `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, history }`) |
+| `config-updated` | `object` | Config agent-relevant modifiée depuis le dashboard |
 | `connected` | — | Connexion WebSocket établie |
 | `disconnected` | — | Déconnexion WebSocket |
 | `error` | `Error` | Erreur connexion ou souscription |
@@ -119,9 +136,9 @@ Client WebSocket basé sur `pusher-js` pour communiquer avec Laravel Reverb.
 
 1. Charge le constructeur depuis `pusher-js/node.js` en gérant l’interop CJS/ESM (`default` vs export direct — évite `Pusher is not a constructor` sur certains Node).
 2. Instancie `Pusher` avec la `reverbAppKey`
-3. Configure l'auth du canal privé via `customHandler` → `POST /api/fixmyui/agent/broadcasting/auth`
+3. Configure l'auth du canal privé via `customHandler` → `POST /api/fixmyui/agent/broadcasting/auth` (envoie `agent_version` dans le body)
 4. Souscrit au canal `private-fixmyui.agent.{installationId}`
-5. Écoute l'événement `new-job` broadcasté par le SaaS
+5. Écoute les événements `new-job` et `config-updated` broadcastés par le SaaS
 
 ### Paramètres WebSocket
 

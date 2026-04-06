@@ -11,9 +11,10 @@ const Pusher = typeof _mod === 'function' ? _mod : _mod.Pusher || _mod.default;
  * WebSocket client for the FixMyUI Reverb server.
  *
  * Emits:
- *   'job'        (payload)   — new job received from the SaaS
- *   'connected'  ()          — WebSocket connection established
- *   'error'      (err)       — connection or subscription error
+ *   'job'             (payload)   — new job received from the SaaS
+ *   'config-updated'  (payload)   — admin changed installation config on the dashboard
+ *   'connected'       ()          — WebSocket connection established
+ *   'error'           (err)       — connection or subscription error
  */
 export class ReverbClient extends EventEmitter {
   #pusher = null;
@@ -68,7 +69,7 @@ export class ReverbClient extends EventEmitter {
                 'Content-Type':  'application/json',
                 'Authorization': `Bearer ${agentSecret}`,
               },
-              body: JSON.stringify({ socket_id: socketId, channel_name: channelName }),
+              body: JSON.stringify({ socket_id: socketId, channel_name: channelName, agent_version: this.#config.agentVersion ?? null }),
             });
 
             if (!res.ok) {
@@ -108,6 +109,10 @@ export class ReverbClient extends EventEmitter {
     // Pusher prepends the class namespace, so the event name is 'new-job'
     this.#channel.bind('new-job', (payload) => {
       this.emit('job', payload);
+    });
+
+    this.#channel.bind('config-updated', (payload) => {
+      this.emit('config-updated', payload);
     });
   }
 

@@ -1,16 +1,15 @@
 import { SaasClient } from './SaasClient.js';
+import { applyRemoteConfig } from './remoteConfig.js';
 
 /**
- * If reverbAppKey is missing, fetch Reverb connection settings from GET /api/fixmyui/agent/me.
+ * Fetch Reverb connection settings + agent-relevant config from GET /api/fixmyui/agent/me.
+ * Always called at startup; skips the HTTP call only if Reverb key is already present
+ * AND env vars cover all agent-relevant fields (rare).
  *
  * @param {import('./Config.js').Config} config
  * @returns {Promise<import('./Config.js').Config>}
  */
 export async function ensureReverbConfig(config) {
-  if (config.reverbAppKey) {
-    return config;
-  }
-
   const saas = new SaasClient(config);
   const me = await saas.me();
 
@@ -20,14 +19,15 @@ export async function ensureReverbConfig(config) {
     );
   }
 
-  const remoteConfig = me.config ?? {};
-
-  return {
+  const merged = {
     ...config,
-    reverbAppKey: me.reverb.key,
+    reverbAppKey: config.reverbAppKey ?? me.reverb.key,
     reverbHost:   config.reverbHost   ?? me.reverb.host,
     reverbPort:   config.reverbPort   ?? me.reverb.port,
     reverbScheme: config.reverbScheme ?? me.reverb.scheme,
-    promptRules:  remoteConfig.prompt_rules ?? config.promptRules ?? null,
   };
+
+  applyRemoteConfig(merged, me.config ?? {});
+
+  return merged;
 }

@@ -1,8 +1,14 @@
 import chalk from 'chalk';
+import { readFileSync } from 'fs';
+import { fileURLToPath } from 'url';
+import { join, dirname } from 'path';
 import { loadConfig, validateConfig } from '../Config.js';
 import { ensureReverbConfig } from '../ensureReverbConfig.js';
 import { SaasClient } from '../SaasClient.js';
 import { Agent } from '../agent/Agent.js';
+
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkg = JSON.parse(readFileSync(join(__dirname, '../../package.json'), 'utf8'));
 
 export async function runStart({ configPath } = {}) {
   let config;
@@ -11,6 +17,7 @@ export async function runStart({ configPath } = {}) {
     config = loadConfig(configPath);
     validateConfig(config);
     config = await ensureReverbConfig(config);
+    config.agentVersion = pkg.version;
   } catch (err) {
     console.error(chalk.red(`\n  Config error: ${err.message}\n`));
     if (config?.agentSecret && config?.apiUrl) {

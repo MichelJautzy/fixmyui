@@ -3,6 +3,7 @@ import { ReverbClient } from './ReverbClient.js';
 import { ClaudeRunner } from './ClaudeRunner.js';
 import { GitHelper } from './GitHelper.js';
 import { SaasClient } from '../SaasClient.js';
+import { applyRemoteConfig } from '../remoteConfig.js';
 
 function formatWsError(err) {
   if (err == null) return 'unknown';
@@ -67,6 +68,11 @@ export class Agent {
       this.#saas.reportError(`WebSocket error: ${msg}`);
     });
 
+    this.#reverb.on('config-updated', (payload) => {
+      applyRemoteConfig(this.#config, payload);
+      this.log('[fixmyui] Config updated remotely — applied.');
+    });
+
     this.#reverb.on('job', (payload) => {
       this.handleJob(payload).catch((err) => {
         this.log(`[fixmyui] Unhandled job error: ${err.message}`);
@@ -77,10 +83,25 @@ export class Agent {
   }
 
   /**
+   * Fetch fresh config from the SaaS and merge agent-relevant fields.
+   * Env vars always take priority over remote values.
+   */
+  async syncRemoteConfig() {
+    try {
+      const me = await this.#saas.me();
+      applyRemoteConfig(this.#config, me.config ?? {});
+    } catch (err) {
+      this.log(`[fixmyui] Warning: could not sync remote config — ${err.message}`);
+    }
+  }
+
+  /**
    * Handle a single job end-to-end.
    * @param {object} payload  The new-job event payload from Reverb
    */
   async handleJob(payload) {
+    await this.syncRemoteConfig();
+
     const { job_id, message, page_url, html_context, element_xpath, history = [] } = payload;
     const {
       branchStrategy, branchPrefix, branchName: fixedBranchName,
