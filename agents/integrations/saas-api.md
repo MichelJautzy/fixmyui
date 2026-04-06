@@ -120,6 +120,23 @@ Appelé en best-effort (le `catch` est silencieux pour ne pas masquer l'erreur o
 
 ---
 
+### `POST /api/fixmyui/agent/error`
+
+**Méthode :** `SaasClient.reportError(message)`
+
+Remonte une erreur non-job au SaaS (startup failure, déconnexion Reverb, etc.). Stockée dans `fixmyui_installations.last_agent_error` et affichée en bannière rouge dans le dashboard. Automatiquement effacée quand l'agent se reconnecte (`broadcastAuth`).
+
+**Body :**
+```json
+{
+  "message": "WebSocket disconnected — agent is no longer listening for jobs."
+}
+```
+
+Best-effort : tous les `catch` sont silencieux, l'appel ne doit jamais crasher l'agent.
+
+---
+
 ## Gestion d'erreurs
 
 - Les erreurs HTTP (non-2xx) lèvent une `Error` avec le status code et le message d'erreur du body

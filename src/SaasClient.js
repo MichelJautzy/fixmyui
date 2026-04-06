@@ -70,6 +70,19 @@ export class SaasClient {
   }
 
   /**
+   * Report a non-job error to the SaaS (startup failure, Reverb disconnect, etc.).
+   * Best-effort: swallows all errors so it never crashes the agent.
+   * Maps to POST /api/fixmyui/agent/error
+   *
+   * @param {string} message
+   */
+  async reportError(message) {
+    try {
+      await this.#post('/api/fixmyui/agent/error', { message: String(message).slice(0, 1000) });
+    } catch { /* best-effort */ }
+  }
+
+  /**
    * Ping the SaaS — used by `fixmyui test`.
    * Attempts a broadcastAuth call with a dummy socket_id to verify credentials.
    */

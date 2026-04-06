@@ -58,10 +58,13 @@ export class Agent {
 
     this.#reverb.on('disconnected', () => {
       this.log('[fixmyui] WebSocket disconnected — will not reconnect automatically.');
+      this.#saas.reportError('WebSocket disconnected — agent is no longer listening for jobs.');
     });
 
     this.#reverb.on('error', (err) => {
-      this.log(`[fixmyui] WebSocket error: ${formatWsError(err)}`);
+      const msg = formatWsError(err);
+      this.log(`[fixmyui] WebSocket error: ${msg}`);
+      this.#saas.reportError(`WebSocket error: ${msg}`);
     });
 
     this.#reverb.on('job', (payload) => {

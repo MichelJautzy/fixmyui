@@ -41,6 +41,17 @@ Orchestrateur principal. Relie toutes les pièces : WebSocket → Claude → Git
 
 En cas d'erreur : `saas.fail()` + `git.checkoutExisting(originalBranch)`
 
+### Remontée d'erreurs au SaaS
+
+L'agent remonte les erreurs non-job au SaaS via `saas.reportError(message)` (best-effort, ne crashe jamais) :
+
+- **`start.js`** : erreurs post-config (ensureReverbConfig échoue, installationId manquant)
+- **`Agent.js`** : WebSocket disconnected + WebSocket errors
+
+Ces erreurs sont stockées dans `fixmyui_installations.last_agent_error` et affichées en bannière rouge dans le dashboard. Elles sont automatiquement effacées quand l'agent se reconnecte avec succès (`broadcastAuth`).
+
+Les erreurs de config fatales (secret manquant) ne peuvent pas être remontées car l'agent ne peut pas s'authentifier.
+
 ---
 
 ## ClaudeRunner (`ClaudeRunner.js`)

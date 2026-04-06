@@ -1,6 +1,7 @@
 import chalk from 'chalk';
 import { loadConfig, validateConfig } from '../Config.js';
 import { ensureReverbConfig } from '../ensureReverbConfig.js';
+import { SaasClient } from '../SaasClient.js';
 import { Agent } from '../agent/Agent.js';
 
 export async function runStart() {
@@ -12,6 +13,9 @@ export async function runStart() {
     config = await ensureReverbConfig(config);
   } catch (err) {
     console.error(chalk.red(`\n  Config error: ${err.message}\n`));
+    if (config?.agentSecret && config?.apiUrl) {
+      await new SaasClient(config).reportError(err.message);
+    }
     process.exit(1);
   }
 
@@ -21,6 +25,7 @@ export async function runStart() {
       '\n  Missing installationId in .fixmyui.json.\n' +
       '  Run `fixmyui init` to set it up.\n'
     ));
+    await new SaasClient(config).reportError('Missing installationId in .fixmyui.json');
     process.exit(1);
   }
 
