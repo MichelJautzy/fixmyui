@@ -4,11 +4,11 @@ import { ensureReverbConfig } from '../ensureReverbConfig.js';
 import { SaasClient } from '../SaasClient.js';
 import { Agent } from '../agent/Agent.js';
 
-export async function runStart() {
+export async function runStart({ configPath } = {}) {
   let config;
 
   try {
-    config = loadConfig();
+    config = loadConfig(configPath);
     validateConfig(config);
     config = await ensureReverbConfig(config);
   } catch (err) {

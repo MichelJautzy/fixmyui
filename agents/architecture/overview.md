@@ -78,7 +78,7 @@ En cas d'erreur à n'importe quelle étape :
 | `apiUrl` | `FIXMYUI_API_URL` | `https://fixmyui.com` | URL du SaaS |
 | `agentSecret` | `FIXMYUI_AGENT_SECRET` | — | Secret agent (requis) |
 | `installationId` | `FIXMYUI_INSTALLATION_ID` | — | ID installation (résolu via `init`) |
-| `repoPath` | — | `.` | Chemin vers la racine du repo git |
+| `repoPath` | — | cwd | Chemin absolu vers la racine du repo git |
 | `branchPrefix` | `FIXMYUI_BRANCH_PREFIX` | `fixmyui` | Préfixe des branches créées |
 | `autoPush` | `FIXMYUI_AUTO_PUSH` | `true` | Push automatique après commit |
 | `previewUrlTemplate` | `FIXMYUI_PREVIEW_URL_TEMPLATE` | — | Template URL preview (`{branch}` remplacé) |
@@ -88,13 +88,24 @@ En cas d'erreur à n'importe quelle étape :
 | `reverbPort` | `FIXMYUI_REVERB_PORT` | 443 (TLS) / 8080 | Port WebSocket |
 | `reverbScheme` | `FIXMYUI_REVERB_SCHEME` | auto depuis `apiUrl` | `http` ou `https` |
 
+### Flag global `--config`
+
+Toutes les commandes acceptent `-c, --config <path>` pour spécifier le chemin exact vers `.fixmyui.json`. Sans ce flag, le fichier est cherché dans `process.cwd()`.
+
+`repoPath` est résolu relativement au répertoire du fichier de config (pas au cwd), ce qui rend les chemins relatifs fiables même avec `--config`. `fixmyui init` écrit `repoPath` en absolu par défaut.
+
+Exemple PM2 :
+```bash
+pm2 start fixmyui --name fixmyui -- start --config /var/www/.fixmyui.json
+```
+
 ### Priorité de chargement
 
 1. Variables d'environnement (prioritaires)
-2. `.fixmyui.json` dans le répertoire courant
+2. `.fixmyui.json` (via `--config` ou dans le répertoire courant)
 3. Valeurs par défaut
 
-La fonction `loadConfig()` dans `Config.js` charge `.env` via dotenv, puis `.fixmyui.json`, avec les env vars en override.
+La fonction `loadConfig(configPath?)` dans `Config.js` charge `.env` via dotenv, puis `.fixmyui.json`, avec les env vars en override.
 
 ---
 

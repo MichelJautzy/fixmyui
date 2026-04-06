@@ -5,7 +5,7 @@ import { ensureReverbConfig } from '../ensureReverbConfig.js';
 import { SaasClient } from '../SaasClient.js';
 import { GitHelper } from '../agent/GitHelper.js';
 
-export async function runTest() {
+export async function runTest({ configPath } = {}) {
   console.log('');
   console.log(chalk.bold.white('  FixMyUI — connection test\n'));
 
@@ -14,7 +14,7 @@ export async function runTest() {
   // ── 1. Config ─────────────────────────────────────────────────────────────
   process.stdout.write('  Config         ');
   try {
-    config = loadConfig();
+    config = loadConfig(configPath);
     validateConfig(config);
     ok('loaded');
   } catch (err) {

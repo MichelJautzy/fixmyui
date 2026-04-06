@@ -40,10 +40,12 @@ To keep it running permanently, use pm2:
 
 ```bash
 npm install -g pm2
-pm2 start $(which fixmyui) --name fixmyui -- start
+pm2 start fixmyui --name fixmyui -- start --config /path/to/.fixmyui.json
 pm2 save
 pm2 startup
 ```
+
+The `-- start` passes the `start` subcommand to fixmyui (everything after `--` goes to the script, not PM2). The `--config` flag tells the agent exactly where to find the config file, avoiding cwd-related issues.
 
 ---
 
@@ -55,21 +57,26 @@ pm2 startup
 |---|---|---|---|
 | `apiUrl` | `FIXMYUI_API_URL` | `https://fixmyui.com` | FixMyUI SaaS URL |
 | `agentSecret` | `FIXMYUI_AGENT_SECRET` | — | Secret from the dashboard (required) |
-| `repoPath` | — | `.` | Path to the git repository root |
+| `repoPath` | — | cwd | Absolute path to the git repository root |
 | `branchPrefix` | `FIXMYUI_BRANCH_PREFIX` | `fixmyui` | Git branch prefix per job |
 | `autoPush` | `FIXMYUI_AUTO_PUSH` | `true` | Push branch after commit |
 | `previewUrlTemplate` | `FIXMYUI_PREVIEW_URL_TEMPLATE` | — | e.g. `https://staging.myapp.com?branch={branch}` |
 | `claudePermissionMode` | `FIXMYUI_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Headless: auto-approve file edits (see Security) |
+
+**Global CLI option:** `--config <path>` (or `-c`) — explicit path to `.fixmyui.json`, works with all commands. Useful when the config file is not in the current directory (PM2, cron, systemd, Docker).
+
+`fixmyui init` writes `repoPath` as an absolute path so the agent works regardless of the working directory.
 
 ---
 
 ## Commands
 
 ```bash
-fixmyui init      # Interactive setup wizard
-fixmyui start     # Start the agent daemon (blocks until Ctrl+C)
-fixmyui test      # Check config, connectivity, and Claude availability
-fixmyui status    # Show current config (masks the secret)
+fixmyui init                    # Interactive setup wizard
+fixmyui start                   # Start the agent daemon (blocks until Ctrl+C)
+fixmyui test                    # Check config, connectivity, and Claude availability
+fixmyui status                  # Show current config (masks the secret)
+fixmyui start -c /path/to/.fixmyui.json   # Use a specific config file
 ```
 
 ---
@@ -113,3 +120,4 @@ Agent receives job
 | Jobs not received | Run `fixmyui test` to verify WebSocket connectivity |
 | Push fails | Ensure the server has push access to the repo (`git push` manually) |
 | "approve file edit permission" / edits not applied | Normal in default Claude mode without a TTY. The agent uses `acceptEdits` by default; set `FIXMYUI_CLAUDE_PERMISSION_MODE=acceptEdits` or add `"claudePermissionMode": "acceptEdits"` to `.fixmyui.json` |
+| `Missing agentSecret` with PM2 | PM2 may use a different working directory. Use `--config`: `pm2 start fixmyui -- start --config /var/www/.fixmyui.json`. Don't forget `-- start` (double dash) to pass args to fixmyui. |

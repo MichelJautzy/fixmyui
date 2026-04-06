@@ -12,7 +12,8 @@ const pkg = JSON.parse(readFileSync(join(__dirname, '../package.json'), 'utf8'))
 program
   .name('fixmyui')
   .description('FixMyUI agent — lets PMs ship UI changes via Claude Code on your staging server.')
-  .version(pkg.version, '-v, --version');
+  .version(pkg.version, '-v, --version')
+  .option('-c, --config <path>', 'Path to .fixmyui.json (default: .fixmyui.json in cwd)');
 
 // ── init ─────────────────────────────────────────────────────────────────────
 program
@@ -20,7 +21,7 @@ program
   .description('Interactive setup wizard — creates .fixmyui.json')
   .action(async () => {
     const { runInit } = await import('../src/commands/init.js');
-    await runInit().catch(handleError);
+    await runInit({ configPath: program.opts().config }).catch(handleError);
   });
 
 // ── start ─────────────────────────────────────────────────────────────────────
@@ -29,7 +30,7 @@ program
   .description('Start the agent daemon and listen for jobs')
   .action(async () => {
     const { runStart } = await import('../src/commands/start.js');
-    await runStart().catch(handleError);
+    await runStart({ configPath: program.opts().config }).catch(handleError);
   });
 
 // ── reset ─────────────────────────────────────────────────────────────────────
@@ -38,7 +39,7 @@ program
   .description('Remove .fixmyui.json — run fixmyui init afterwards')
   .action(async () => {
     const { runReset } = await import('../src/commands/reset.js');
-    runReset();
+    runReset({ configPath: program.opts().config });
   });
 
 // ── test ──────────────────────────────────────────────────────────────────────
@@ -47,7 +48,7 @@ program
   .description('Test config, SaaS connectivity, Claude CLI and git')
   .action(async () => {
     const { runTest } = await import('../src/commands/test.js');
-    await runTest().catch(handleError);
+    await runTest({ configPath: program.opts().config }).catch(handleError);
   });
 
 // ── status ────────────────────────────────────────────────────────────────────
@@ -58,7 +59,7 @@ program
     const { loadConfig } = await import('../src/Config.js');
     let config;
     try {
-      config = loadConfig();
+      config = loadConfig(program.opts().config);
     } catch (err) {
       console.error(chalk.red(`\n  ${err.message}\n`));
       process.exit(1);

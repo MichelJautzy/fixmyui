@@ -1,5 +1,5 @@
 import { readFileSync, writeFileSync, existsSync } from 'fs';
-import { resolve, join } from 'path';
+import { resolve, join, dirname } from 'path';
 import dotenv from 'dotenv';
 
 const CONFIG_FILENAME = '.fixmyui.json';
@@ -8,24 +8,29 @@ const CONFIG_FILENAME = '.fixmyui.json';
  * Load configuration from .fixmyui.json and environment variables.
  * Environment variables take priority over .fixmyui.json.
  *
- * @param {string} [cwd] Directory to search for .fixmyui.json (default: process.cwd())
+ * @param {string} [configPath] Explicit path to .fixmyui.json (bypasses cwd search)
  * @returns {Config}
  */
-export function loadConfig(cwd = process.cwd()) {
+export function loadConfig(configPath) {
+  const cwd = process.cwd();
+
   // Load .env if present (silently — not required)
   const dotenvPath = join(cwd, '.env');
   if (existsSync(dotenvPath)) {
     dotenv.config({ path: dotenvPath });
   }
 
-  const file = findConfigFile(cwd);
-  const fileConfig = file ? parseJsonFile(file) : {};
+  const file = configPath ? resolve(configPath) : findConfigFile(cwd);
+  const fileConfig = file && existsSync(file) ? parseJsonFile(file) : {};
+
+  // Resolve repoPath relative to the config file's directory (not cwd)
+  const configDir = file ? dirname(file) : cwd;
 
   const config = {
     apiUrl:             env('FIXMYUI_API_URL')              ?? fileConfig.apiUrl              ?? 'https://fixmyui.com',
     agentSecret:        env('FIXMYUI_AGENT_SECRET')         ?? fileConfig.agentSecret         ?? null,
     installationId:     env('FIXMYUI_INSTALLATION_ID')      ?? fileConfig.installationId      ?? null,
-    repoPath:           resolve(cwd, fileConfig.repoPath    ?? '.'),
+    repoPath:           resolve(configDir, fileConfig.repoPath ?? '.'),
     branchStrategy:     env('FIXMYUI_BRANCH_STRATEGY')      ?? fileConfig.branchStrategy      ?? 'new-branch',
     branchPrefix:       env('FIXMYUI_BRANCH_PREFIX')        ?? fileConfig.branchPrefix        ?? 'fixmyui',
     branchName:         env('FIXMYUI_BRANCH_NAME')          ?? fileConfig.branchName          ?? 'fixmyui',
@@ -64,20 +69,24 @@ export function validateConfig(config) {
 /**
  * Write config to .fixmyui.json (used by `fixmyui init`).
  * @param {Partial<Config>} values
- * @param {string} [cwd]
+ * @param {string} [configPath] Explicit file path, or null to write in cwd
  */
-export function writeConfig(values, cwd = process.cwd()) {
-  const path = join(cwd, CONFIG_FILENAME);
-  writeFileSync(path, JSON.stringify(values, null, 2) + '\n', 'utf8');
+export function writeConfig(values, configPath) {
+  const target = configPath ? resolve(configPath) : join(process.cwd(), CONFIG_FILENAME);
+  writeFileSync(target, JSON.stringify(values, null, 2) + '\n', 'utf8');
 }
 
 /**
  * Return the path to the config file if it exists, otherwise null.
- * @param {string} [cwd]
+ * @param {string} [configPath] Explicit path, or null to search in cwd
  * @returns {string|null}
  */
-export function configFilePath(cwd = process.cwd()) {
-  return findConfigFile(cwd);
+export function configFilePath(configPath) {
+  if (configPath) {
+    const abs = resolve(configPath);
+    return existsSync(abs) ? abs : null;
+  }
+  return findConfigFile(process.cwd());
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

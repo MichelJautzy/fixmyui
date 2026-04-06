@@ -6,14 +6,15 @@ import { GitHelper } from '../agent/GitHelper.js';
 import { existsSync } from 'fs';
 import { resolve } from 'path';
 
-export async function runInit() {
+export async function runInit({ configPath } = {}) {
   console.log('');
   console.log(chalk.bold.white('  FixMyUI — setup wizard'));
   console.log(chalk.gray('  This will create a .fixmyui.json file in the current directory.\n'));
 
   const cwd = process.cwd();
+  const targetFile = configPath ?? resolve(cwd, '.fixmyui.json');
 
-  if (existsSync(resolve(cwd, '.fixmyui.json'))) {
+  if (existsSync(targetFile)) {
     const overwrite = await confirm({
       message: chalk.yellow('.fixmyui.json already exists. Overwrite?'),
       default: false,
@@ -63,8 +64,8 @@ export async function runInit() {
 
   // ── Step 4: Repo path (local-only setting) ─────────────────────────────
   const repoPath = await input({
-    message: 'Path to the git repository root',
-    default: '.',
+    message: 'Absolute path to the git repository root',
+    default: resolve(cwd, '.'),
     validate: async (v) => {
       const abs = resolve(cwd, v);
       if (!existsSync(abs)) return `Directory "${abs}" does not exist`;
@@ -84,7 +85,7 @@ export async function runInit() {
     apiUrl:             apiUrl.replace(/\/$/, ''),
     agentSecret,
     installationId,
-    repoPath,
+    repoPath:           resolve(cwd, repoPath),
     branchStrategy:     remoteConfig.branch_strategy ?? 'new-branch',
     branchPrefix:       remoteConfig.branch_name ?? 'fixmyui',
     branchName:         remoteConfig.branch_name ?? 'fixmyui',
@@ -98,7 +99,7 @@ export async function runInit() {
     reverbScheme:       me.reverb.scheme,
   };
 
-  writeConfig(configData, cwd);
+  writeConfig(configData, configPath);
 
   console.log('');
   console.log(chalk.green.bold('  .fixmyui.json created.'));
