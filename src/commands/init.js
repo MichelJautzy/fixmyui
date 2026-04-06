@@ -78,48 +78,43 @@ export async function runInit({ configPath } = {}) {
     },
   });
 
-  // ── Merge remote config from dashboard ─────────────────────────────────
-  const remoteConfig = me.config ?? {};
-
+  // Only local identity fields — remote config (branch strategy, auto-push,
+  // prompt rules, etc.) is always fetched live from the SaaS at startup and
+  // before each job, so it does not belong in the file.
   const configData = {
-    apiUrl:             apiUrl.replace(/\/$/, ''),
+    apiUrl:       apiUrl.replace(/\/$/, ''),
     agentSecret,
     installationId,
-    repoPath:           resolve(cwd, repoPath),
-    branchStrategy:     remoteConfig.branch_strategy ?? 'new-branch',
-    branchPrefix:       remoteConfig.branch_name ?? 'fixmyui',
-    branchName:         remoteConfig.branch_name ?? 'fixmyui',
-    autoPush:           remoteConfig.auto_push ?? true,
-    postCommands:       remoteConfig.post_commands ?? [],
-    previewUrlTemplate: remoteConfig.preview_url_template ?? null,
-    promptRules:        remoteConfig.prompt_rules ?? null,
-    reverbAppKey:       me.reverb.key,
-    reverbHost:         me.reverb.host,
-    reverbPort:         me.reverb.port,
-    reverbScheme:       me.reverb.scheme,
+    repoPath:     resolve(cwd, repoPath),
+    reverbAppKey: me.reverb.key,
+    reverbHost:   me.reverb.host,
+    reverbPort:   me.reverb.port,
+    reverbScheme: me.reverb.scheme,
   };
 
   writeConfig(configData, configPath);
 
+  const remoteConfig = me.config ?? {};
+  const strategy = remoteConfig.branch_strategy ?? 'new-branch';
+  const strategyLabels = {
+    'new-branch': 'New branch per job',
+    'same-branch': `Fixed branch (${remoteConfig.branch_name ?? 'fixmyui'})`,
+    'local-branch': 'Stay on current branch',
+  };
+
   console.log('');
   console.log(chalk.green.bold('  .fixmyui.json created.'));
   console.log('');
-
-  const strategyLabels = {
-    'new-branch': 'New branch per job',
-    'same-branch': `Fixed branch (${configData.branchName})`,
-    'local-branch': 'Stay on current branch',
-  };
-  console.log(chalk.gray('  Remote configuration loaded from dashboard:'));
-  console.log(chalk.gray(`    Branch strategy : ${strategyLabels[configData.branchStrategy] ?? configData.branchStrategy}`));
-  console.log(chalk.gray(`    Auto-push       : ${configData.autoPush ? 'yes' : 'no'}`));
-  console.log(chalk.gray(`    Post-commands   : ${configData.postCommands.length} configured`));
-  if (configData.previewUrlTemplate) {
-    console.log(chalk.gray(`    Preview URL     : ${configData.previewUrlTemplate}`));
+  console.log(chalk.gray('  Dashboard config (synced at runtime — not stored locally):'));
+  console.log(chalk.gray(`    Branch strategy : ${strategyLabels[strategy] ?? strategy}`));
+  console.log(chalk.gray(`    Auto-push       : ${(remoteConfig.auto_push ?? true) ? 'yes' : 'no'}`));
+  console.log(chalk.gray(`    Post-commands   : ${(remoteConfig.post_commands ?? []).length} configured`));
+  if (remoteConfig.preview_url_template) {
+    console.log(chalk.gray(`    Preview URL     : ${remoteConfig.preview_url_template}`));
   }
   console.log('');
   console.log(chalk.gray('  Reminder: add .fixmyui.json to .gitignore to protect your secret.'));
-  console.log(chalk.gray('  Tip: change these settings from the FixMyUI dashboard, then re-run `fixmyui init`.'));
+  console.log(chalk.gray('  Tip: change these settings from the FixMyUI dashboard — they sync automatically.'));
   console.log('');
   console.log('  Next steps:');
   console.log(chalk.cyan('    fixmyui test    ') + chalk.gray('— verify the full connection'));

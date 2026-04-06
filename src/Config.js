@@ -27,22 +27,27 @@ export function loadConfig(configPath) {
   const configDir = file ? dirname(file) : cwd;
 
   const config = {
+    // ── Local identity (file + env) ──────────────────────────────────────
     apiUrl:             env('FIXMYUI_API_URL')              ?? fileConfig.apiUrl              ?? 'https://fixmyui.com',
     agentSecret:        env('FIXMYUI_AGENT_SECRET')         ?? fileConfig.agentSecret         ?? null,
     installationId:     env('FIXMYUI_INSTALLATION_ID')      ?? fileConfig.installationId      ?? null,
     repoPath:           resolve(configDir, fileConfig.repoPath ?? '.'),
-    branchStrategy:     env('FIXMYUI_BRANCH_STRATEGY')      ?? fileConfig.branchStrategy      ?? 'new-branch',
-    branchPrefix:       env('FIXMYUI_BRANCH_PREFIX')        ?? fileConfig.branchPrefix        ?? 'fixmyui',
-    branchName:         env('FIXMYUI_BRANCH_NAME')          ?? fileConfig.branchName          ?? 'fixmyui',
-    autoPush:           envBool('FIXMYUI_AUTO_PUSH')        ?? fileConfig.autoPush            ?? true,
-    postCommands:       fileConfig.postCommands             ?? [],
-    previewUrlTemplate: env('FIXMYUI_PREVIEW_URL_TEMPLATE') ?? fileConfig.previewUrlTemplate  ?? null,
     reverbAppKey:       env('FIXMYUI_REVERB_APP_KEY')       ?? fileConfig.reverbAppKey       ?? null,
     reverbHost:         env('FIXMYUI_REVERB_HOST')          ?? fileConfig.reverbHost         ?? null,
     reverbPort:         envInt('FIXMYUI_REVERB_PORT')       ?? fileConfig.reverbPort         ?? null,
     reverbScheme:       env('FIXMYUI_REVERB_SCHEME')        ?? fileConfig.reverbScheme       ?? null,
     claudePermissionMode: env('FIXMYUI_CLAUDE_PERMISSION_MODE') ?? fileConfig.claudePermissionMode ?? 'acceptEdits',
-    promptRules:        fileConfig.promptRules ?? null,
+
+    // ── Remote (fetched from SaaS at runtime via ensureReverbConfig / syncRemoteConfig) ──
+    // Env vars can still override; file values are intentionally ignored — the SaaS is the
+    // single source of truth for these fields.
+    branchStrategy:     env('FIXMYUI_BRANCH_STRATEGY')      ?? 'new-branch',
+    branchPrefix:       env('FIXMYUI_BRANCH_PREFIX')        ?? 'fixmyui',
+    branchName:         env('FIXMYUI_BRANCH_NAME')          ?? 'fixmyui',
+    autoPush:           envBool('FIXMYUI_AUTO_PUSH')        ?? true,
+    postCommands:       [],
+    previewUrlTemplate: env('FIXMYUI_PREVIEW_URL_TEMPLATE') ?? null,
+    promptRules:        null,
   };
 
   config.apiUrl = config.apiUrl.replace(/\/$/, '');

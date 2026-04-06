@@ -18,9 +18,10 @@ fixmyui/
 │   │   ├── init.js             # Wizard interactif — crée .fixmyui.json
 │   │   ├── start.js            # Démarre le daemon agent
 │   │   └── test.js             # Tests connectivité, Claude, git
-│   ├── Config.js               # Chargement config (.fixmyui.json + env)
+│   ├── Config.js               # Chargement config locale (.fixmyui.json + env)
 │   ├── SaasClient.js           # Client HTTP pour l'API FixMyUI
-│   └── ensureReverbConfig.js   # Récupère reverbAppKey depuis le SaaS si absent
+│   ├── remoteConfig.js         # applyRemoteConfig() — merge config SaaS dans l'objet en mémoire
+│   └── ensureReverbConfig.js   # Fetch Reverb + config remote au démarrage
 ├── package.json
 ├── .env.example
 ├── .gitignore
@@ -71,7 +72,9 @@ En cas d'erreur à n'importe quelle étape :
 
 ## Configuration
 
-### Fichier `.fixmyui.json` (créé par `fixmyui init`)
+### Fichier `.fixmyui.json` — identité locale uniquement
+
+`fixmyui init` ne crée que les champs d'identité et de connexion. Les paramètres « métier » (stratégie de branche, auto-push, prompt rules…) sont gérés sur le dashboard SaaS et synchronisés automatiquement.
 
 | Clé | Env var | Défaut | Description |
 |-----|---------|--------|-------------|
@@ -79,14 +82,25 @@ En cas d'erreur à n'importe quelle étape :
 | `agentSecret` | `FIXMYUI_AGENT_SECRET` | — | Secret agent (requis) |
 | `installationId` | `FIXMYUI_INSTALLATION_ID` | — | ID installation (résolu via `init`) |
 | `repoPath` | — | cwd | Chemin absolu vers la racine du repo git |
-| `branchPrefix` | `FIXMYUI_BRANCH_PREFIX` | `fixmyui` | Préfixe des branches créées |
-| `autoPush` | `FIXMYUI_AUTO_PUSH` | `true` | Push automatique après commit |
-| `previewUrlTemplate` | `FIXMYUI_PREVIEW_URL_TEMPLATE` | — | Template URL preview (`{branch}` remplacé) |
 | `claudePermissionMode` | `FIXMYUI_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Mode permission Claude Code |
-| `reverbAppKey` | `FIXMYUI_REVERB_APP_KEY` | — | Clé publique Reverb (auto-fetch si absent) |
+| `reverbAppKey` | `FIXMYUI_REVERB_APP_KEY` | — | Clé publique Reverb (set par `init`) |
 | `reverbHost` | `FIXMYUI_REVERB_HOST` | hostname de `apiUrl` | Host WebSocket |
 | `reverbPort` | `FIXMYUI_REVERB_PORT` | 443 (TLS) / 8080 | Port WebSocket |
 | `reverbScheme` | `FIXMYUI_REVERB_SCHEME` | auto depuis `apiUrl` | `http` ou `https` |
+
+### Config remote (SaaS = source de vérité)
+
+Ces champs ne sont **pas** dans `.fixmyui.json`. Ils sont récupérés du SaaS au démarrage (`ensureReverbConfig`), avant chaque job (`syncRemoteConfig`), et en temps réel via WebSocket (`config-updated`). Des env vars peuvent les surcharger :
+
+| Paramètre | Env var override |
+|-----------|-----------------|
+| `branchStrategy` | `FIXMYUI_BRANCH_STRATEGY` |
+| `branchPrefix` | `FIXMYUI_BRANCH_PREFIX` |
+| `branchName` | `FIXMYUI_BRANCH_NAME` |
+| `autoPush` | `FIXMYUI_AUTO_PUSH` |
+| `postCommands` | — |
+| `previewUrlTemplate` | `FIXMYUI_PREVIEW_URL_TEMPLATE` |
+| `promptRules` | — |
 
 ### Flag global `--config`
 
@@ -102,10 +116,10 @@ pm2 start fixmyui --name fixmyui -- start --config /var/www/.fixmyui.json
 ### Priorité de chargement
 
 1. Variables d'environnement (prioritaires)
-2. `.fixmyui.json` (via `--config` ou dans le répertoire courant)
+2. SaaS remote config (via API / WebSocket)
 3. Valeurs par défaut
 
-La fonction `loadConfig(configPath?)` dans `Config.js` charge `.env` via dotenv, puis `.fixmyui.json`, avec les env vars en override.
+`loadConfig()` dans `Config.js` charge `.env` + `.fixmyui.json` pour l'identité locale. `ensureReverbConfig()` puis `applyRemoteConfig()` complètent les champs métier depuis le SaaS.
 
 ---
 

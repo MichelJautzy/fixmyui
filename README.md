@@ -51,17 +51,32 @@ The `-- start` passes the `start` subcommand to fixmyui (everything after `--` g
 
 ## Configuration
 
-`fixmyui init` creates a `.fixmyui.json` file in the current directory. You can also use environment variables (which take priority):
+### Local config (`.fixmyui.json`)
+
+`fixmyui init` creates a `.fixmyui.json` file containing only **identity & connection** fields. You can also use environment variables (which take priority):
 
 | `.fixmyui.json` key | Env var | Default | Description |
 |---|---|---|---|
 | `apiUrl` | `FIXMYUI_API_URL` | `https://fixmyui.com` | FixMyUI SaaS URL |
 | `agentSecret` | `FIXMYUI_AGENT_SECRET` | — | Secret from the dashboard (required) |
+| `installationId` | `FIXMYUI_INSTALLATION_ID` | — | Set automatically by `fixmyui init` |
 | `repoPath` | — | cwd | Absolute path to the git repository root |
-| `branchPrefix` | `FIXMYUI_BRANCH_PREFIX` | `fixmyui` | Git branch prefix per job |
-| `autoPush` | `FIXMYUI_AUTO_PUSH` | `true` | Push branch after commit |
-| `previewUrlTemplate` | `FIXMYUI_PREVIEW_URL_TEMPLATE` | — | e.g. `https://staging.myapp.com?branch={branch}` |
+| `reverbAppKey` | `FIXMYUI_REVERB_APP_KEY` | — | Reverb key (set by `fixmyui init`) |
 | `claudePermissionMode` | `FIXMYUI_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Headless: auto-approve file edits (see Security) |
+
+### Dashboard config (synced from SaaS)
+
+These settings are managed on the [FixMyUI dashboard](https://fixmyui.com/fixmyui) and **synced automatically** at agent startup, before each job, and in real-time via WebSocket when you save. They are **not** stored in `.fixmyui.json`. Env vars can still override them:
+
+| Setting | Env var override | Description |
+|---|---|---|
+| Branch strategy | `FIXMYUI_BRANCH_STRATEGY` | `new-branch`, `same-branch`, or `local-branch` |
+| Branch name | `FIXMYUI_BRANCH_NAME` | Fixed branch name (when strategy = `same-branch`) |
+| Branch prefix | `FIXMYUI_BRANCH_PREFIX` | Prefix for new branches |
+| Auto-push | `FIXMYUI_AUTO_PUSH` | Push branch after commit |
+| Post-commands | — | Shell commands to run after Claude finishes |
+| Preview URL | `FIXMYUI_PREVIEW_URL_TEMPLATE` | e.g. `https://staging.myapp.com?branch={branch}` |
+| Prompt rules | — | Instructions prepended to every Claude prompt |
 
 **Global CLI option:** `--config <path>` (or `-c`) — explicit path to `.fixmyui.json`, works with all commands. Useful when the config file is not in the current directory (PM2, cron, systemd, Docker).
 
