@@ -90,8 +90,12 @@ Spawne le CLI `claude` en subprocess et parse le flux `stream-json`.
 Construit le prompt envoyé à Claude à partir du job :
 - Historique des turns précédents (si conversation multi-tour)
 - URL de la page concernée
+- Élément DOM sélectionné (HTML + XPath)
+- Screenshot de la zone ciblée (URL publique, si fourni par le PM via le widget)
 - Message du PM
 - Instructions : appliquer le changement, ne pas commit, ne pas casser l'existant
+
+Si `screenshot_url` est présent, le prompt inclut l'URL avec une instruction demandant à Claude d'analyser l'image pour comprendre l'état visuel actuel de l'UI.
 
 ### `run(prompt)`
 
@@ -126,7 +130,7 @@ Client WebSocket basé sur `pusher-js` pour communiquer avec Laravel Reverb.
 
 | Événement | Payload | Description |
 |-----------|---------|-------------|
-| `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, history }`) |
+| `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, html_context, element_xpath, screenshot_url, history }`) |
 | `config-updated` | `object` | Config agent-relevant modifiée depuis le dashboard |
 | `connected` | — | Connexion WebSocket établie |
 | `disconnected` | — | Déconnexion WebSocket |

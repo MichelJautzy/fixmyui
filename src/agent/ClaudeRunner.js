@@ -44,8 +44,9 @@ export class ClaudeRunner extends EventEmitter {
    * @param {string}   [job.page_url]
    * @param {string}   [job.html_context]  Outer HTML of the element the PM selected
    * @param {string}   [job.element_xpath] Full XPath of the selected element in the page DOM
+   * @param {string}   [job.screenshot_url] URL of a screenshot taken by the PM
    * @param {string}   [job.prompt_rules]  Admin-defined guardrails
-   * @param {Array}    [job.history]  [{message, result, branch}, ...]
+   * @param {Array}    [job.history]  [{message, result, branch, screenshot_url}, ...]
    * @returns {string}
    */
   static buildPrompt(job) {
@@ -81,6 +82,13 @@ export class ClaudeRunner extends EventEmitter {
         lines.push(job.html_context);
         lines.push('```');
       }
+      lines.push('');
+    }
+
+    if (job.screenshot_url) {
+      lines.push('Screenshot of the area the PM wants to modify:');
+      lines.push(job.screenshot_url);
+      lines.push('Analyze this screenshot to understand the current visual state of the UI. The PM\'s instructions refer to what is shown in this image.');
       lines.push('');
     }
 

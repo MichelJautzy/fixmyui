@@ -102,7 +102,7 @@ export class Agent {
   async handleJob(payload) {
     await this.syncRemoteConfig();
 
-    const { job_id, message, page_url, html_context, element_xpath, history = [] } = payload;
+    const { job_id, message, page_url, html_context, element_xpath, screenshot_url, history = [] } = payload;
     const {
       branchStrategy, branchPrefix, branchName: fixedBranchName,
       autoPush, previewUrlTemplate, repoPath, postCommands,
@@ -112,6 +112,7 @@ export class Agent {
     if (page_url) this.log(`  [context] Page: ${page_url}`);
     if (element_xpath) this.log(`  [context] XPath: ${element_xpath}`);
     if (html_context) this.log(`  [context] HTML: ${html_context.slice(0, 120)}${html_context.length > 120 ? '…' : ''}`);
+    if (screenshot_url) this.log(`  [context] Screenshot: ${screenshot_url}`);
 
     let activeBranch = null;
 
@@ -142,7 +143,7 @@ export class Agent {
 
       // ── 2. Build Claude prompt ──────────────────────────────────────────
       const prompt = ClaudeRunner.buildPrompt({
-        pm_message: message, page_url, html_context, element_xpath, history,
+        pm_message: message, page_url, html_context, element_xpath, screenshot_url, history,
         prompt_rules: this.#config.promptRules,
       });
 
