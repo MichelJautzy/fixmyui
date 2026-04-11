@@ -85,7 +85,7 @@ Le message est tronqué à 900 caractères côté agent.
 
 ### `POST /api/fixmyui/agent/jobs/{id}/complete`
 
-**Méthode :** `SaasClient.complete(jobId, { result_message, branch, preview_url })`
+**Méthode :** `SaasClient.complete(jobId, { result_message, branch, preview_url, claude_code_version })`
 
 Marque un job comme terminé avec succès.
 
@@ -94,9 +94,12 @@ Marque un job comme terminé avec succès.
 {
   "result_message": "Changes applied on branch fixmyui/a1b2c3d4.",
   "branch": "fixmyui/a1b2c3d4",
-  "preview_url": "https://staging.myapp.com?branch=fixmyui/a1b2c3d4"
+  "preview_url": "https://staging.myapp.com?branch=fixmyui/a1b2c3d4",
+  "claude_code_version": "2.0.14 (Claude Code)"
 }
 ```
+
+- `claude_code_version` (optionnel) : sortie tronquée de `claude --version` sur la machine agent, affichée sur le dashboard installation.
 
 - `branch` est `null` si aucun changement détecté (working tree clean)
 - `preview_url` est `null` si `previewUrlTemplate` n'est pas configuré

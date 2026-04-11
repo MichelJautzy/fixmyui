@@ -33,11 +33,12 @@ export class SaasClient {
    * @param {string} [payload.branch]
    * @param {string} [payload.preview_url]
    */
-  async complete(jobId, { result_message, branch, preview_url } = {}) {
+  async complete(jobId, { result_message, branch, preview_url, claude_code_version } = {}) {
     return this.#post(`/api/fixmyui/agent/jobs/${jobId}/complete`, {
       result_message,
       branch,
       preview_url,
+      claude_code_version,
     });
   }
 

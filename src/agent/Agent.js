@@ -1,9 +1,12 @@
-import { spawn } from 'child_process';
+import { spawn, execFile } from 'child_process';
+import { promisify } from 'util';
 import { ReverbClient } from './ReverbClient.js';
 import { ClaudeRunner } from './ClaudeRunner.js';
 import { GitHelper } from './GitHelper.js';
 import { SaasClient } from '../SaasClient.js';
 import { applyRemoteConfig } from '../remoteConfig.js';
+
+const execFileAsync = promisify(execFile);
 
 function formatWsError(err) {
   if (err == null) return 'unknown';
@@ -185,10 +188,12 @@ export class Agent {
         : null;
 
       // ── 8. Report success ───────────────────────────────────────────────
+      const claudeCodeVersion = await this.#getClaudeCodeVersion();
       await this.#saas.complete(job_id, {
         result_message: resultText || `Changes applied on branch ${activeBranch}.`,
         branch:         isDirty ? activeBranch : null,
         preview_url:    previewUrl,
+        claude_code_version: claudeCodeVersion,
       });
 
       this.log(`[fixmyui] Job ${job_id} completed.`);
@@ -200,6 +205,24 @@ export class Agent {
       if (this.#originalBranch && branchStrategy !== 'local-branch') {
         await this.#git.checkoutExisting(this.#originalBranch).catch(() => {});
       }
+    }
+  }
+
+  /**
+   * Best-effort: read `claude --version` for the dashboard (no throw).
+   * @returns {Promise<string|null>}
+   */
+  async #getClaudeCodeVersion() {
+    try {
+      const { stdout } = await execFileAsync('claude', ['--version'], {
+        timeout: 5000,
+        maxBuffer: 64 * 1024,
+      });
+      const v = String(stdout).trim();
+      if (!v) return null;
+      return v.length > 120 ? v.slice(0, 120) : v;
+    } catch {
+      return null;
     }
   }
 
