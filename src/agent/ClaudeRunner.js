@@ -25,6 +25,7 @@ export class ClaudeRunner extends EventEmitter {
   #proc = null;
   #repoPath;
   #permissionMode;
+  #tokenUsage = { input: 0, output: 0 };
 
   /**
    * @param {import('../Config.js').Config} config
@@ -55,6 +56,22 @@ export class ClaudeRunner extends EventEmitter {
     if (job.prompt_rules) {
       lines.push('RULES (from project admin — always follow):');
       lines.push(job.prompt_rules);
+      lines.push('');
+    }
+
+    if (job.ai_policies && job.ai_policies.length > 0) {
+      lines.push('FILE ACCESS POLICIES:');
+      for (const policy of job.ai_policies) {
+        const prefix = policy.type === 'allow' ? 'ALLOWED' : 'DENIED';
+        lines.push(`  ${prefix}: ${policy.pattern}${policy.description ? ' — ' + policy.description : ''}`);
+      }
+      lines.push('You MUST respect these policies. Do NOT modify files matching DENIED patterns.');
+      lines.push('');
+    }
+
+    if (job.global_context) {
+      lines.push('PROJECT CONTEXT (from admin):');
+      lines.push(job.global_context);
       lines.push('');
     }
 
@@ -166,7 +183,7 @@ export class ClaudeRunner extends EventEmitter {
       if (code !== 0) {
         this.emit('error', new Error(`claude exited with code ${code}`));
       } else {
-        this.emit('done', resultText);
+        this.emit('done', resultText, this.#tokenUsage);
       }
     });
   }
@@ -214,6 +231,11 @@ export class ClaudeRunner extends EventEmitter {
       }
     } else if (type === 'result') {
       const text = event.result ?? '';
+      const usage = event.usage ?? event.message?.usage;
+      if (usage) {
+        this.#tokenUsage.input = usage.input_tokens ?? usage.prompt_tokens ?? 0;
+        this.#tokenUsage.output = usage.output_tokens ?? usage.completion_tokens ?? 0;
+      }
       emit('result', text);
     } else if (type === 'system') {
       // system prompt confirmation — ignore

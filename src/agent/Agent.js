@@ -148,11 +148,15 @@ export class Agent {
       const prompt = ClaudeRunner.buildPrompt({
         pm_message: message, page_url, html_context, element_xpath, screenshot_url, history,
         prompt_rules: this.#config.promptRules,
+        ai_policies: this.#config.aiPolicies,
+        global_context: this.#config.globalContext,
       });
 
       // ── 3. Run Claude with streaming progress ───────────────────────────
       await this.#saas.progress(job_id, 'Claude is starting…', 'info');
-      const resultText = await this.#runClaude(job_id, prompt, repoPath);
+      const jobStartTime = Date.now();
+      const { resultText, tokenUsage } = await this.#runClaude(job_id, prompt, repoPath);
+      const durationSeconds = Math.round((Date.now() - jobStartTime) / 1000);
 
       // ── 4. Commit changes ───────────────────────────────────────────────
       const isDirty = await this.#git.isDirty();
@@ -194,6 +198,9 @@ export class Agent {
         branch:         isDirty ? activeBranch : null,
         preview_url:    previewUrl,
         claude_code_version: claudeCodeVersion,
+        tokens_input:   tokenUsage?.input || null,
+        tokens_output:  tokenUsage?.output || null,
+        duration_seconds: durationSeconds,
       });
 
       this.log(`[fixmyui] Job ${job_id} completed.`);
@@ -228,7 +235,7 @@ export class Agent {
 
   /**
    * Run ClaudeRunner and forward all events as progress reports.
-   * @returns {Promise<string>} the final result text from Claude
+   * @returns {Promise<{resultText: string, tokenUsage: {input: number, output: number}}>}
    */
   #runClaude(jobId, prompt) {
     return new Promise((resolve, reject) => {
@@ -256,9 +263,9 @@ export class Agent {
         reject(err);
       });
 
-      runner.on('done', (resultText) => {
+      runner.on('done', (resultText, tokenUsage) => {
         this.#activeRunner = null;
-        resolve(resultText);
+        resolve({ resultText, tokenUsage });
       });
 
       runner.run(prompt);

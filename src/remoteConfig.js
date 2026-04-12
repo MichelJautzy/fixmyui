@@ -16,6 +16,8 @@ export function applyRemoteConfig(config, remote) {
     ['post_commands',         'postCommands',       null,                            Array],
     ['preview_url_template',  'previewUrlTemplate', 'FIXMYUI_PREVIEW_URL_TEMPLATE',  String],
     ['prompt_rules',          'promptRules',        null,                            String],
+    ['ai_policies',           'aiPolicies',         null,                            Array],
+    ['global_context',        'globalContext',       null,                            String],
   ];
 
   for (const [remoteKey, localKey, envKey, _type] of mapping) {
