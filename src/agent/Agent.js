@@ -3,6 +3,7 @@ import { promisify } from 'util';
 import { ReverbClient } from './ReverbClient.js';
 import { ClaudeRunner } from './ClaudeRunner.js';
 import { GitHelper } from './GitHelper.js';
+import { prefetchScreenshot, rewritePromptWithLocalScreenshot } from './ScreenshotPrefetcher.js';
 import { SaasClient } from '../SaasClient.js';
 import { applyRemoteConfig } from '../remoteConfig.js';
 
@@ -192,6 +193,7 @@ export class Agent {
     }
 
     let activeBranch = null;
+    let screenshotCleanup = null;
     this.#activeJobId = job_id;
 
     try {
@@ -225,7 +227,29 @@ export class Agent {
       }
 
       // ── 2. Prompt comes compiled from the SaaS (single source of truth) ─
-      const prompt = compiled_prompt;
+      //       Then locally rewrite the screenshot URL to a downloaded file so
+      //       Claude can Read it without needing any network permission.
+      let prompt = compiled_prompt;
+
+      if (screenshot_url) {
+        try {
+          await this.#saas.progress(job_id, 'Downloading screenshot…', 'info').catch(() => {});
+          const pre = await prefetchScreenshot(screenshot_url, {
+            repoPath,
+            jobId: job_id,
+          });
+          prompt = rewritePromptWithLocalScreenshot(prompt, screenshot_url, pre.localPath);
+          screenshotCleanup = pre.cleanup;
+          this.log(`  [screenshot] Prefetched to ${pre.localPath}`);
+        } catch (err) {
+          this.log(`[fixmyui] Warning: screenshot prefetch failed (${err.message}) — falling back to URL in prompt.`);
+          await this.#saas.progress(
+            job_id,
+            `Screenshot prefetch failed (${err.message}) — Claude will try the URL directly.`,
+            'info',
+          ).catch(() => {});
+        }
+      }
 
       // ── 3. Run Claude with streaming progress ───────────────────────────
       await this.#saas.progress(job_id, 'Claude is starting…', 'info');
@@ -292,6 +316,9 @@ export class Agent {
         await this.#git.checkoutExisting(this.#originalBranch).catch(() => {});
       }
     } finally {
+      if (screenshotCleanup) {
+        await screenshotCleanup().catch(() => { /* best-effort */ });
+      }
       if (this.#activeJobId === job_id) this.#activeJobId = null;
       this.#cancelledJobs.delete(job_id);
     }

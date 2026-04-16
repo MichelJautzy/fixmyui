@@ -62,7 +62,7 @@ The `-- start` passes the `start` subcommand to fixmyui (everything after `--` g
 | `installationId` | `FIXMYUI_INSTALLATION_ID` | — | Set automatically by `fixmyui init` |
 | `repoPath` | — | cwd | Absolute path to the git repository root |
 | `reverbAppKey` | `FIXMYUI_REVERB_APP_KEY` | — | Reverb key (set by `fixmyui init`) |
-| `claudePermissionMode` | `FIXMYUI_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Headless: auto-approve file edits (see Security) |
+| `claudePermissionMode` | `FIXMYUI_CLAUDE_PERMISSION_MODE` | `acceptEdits` | Headless: auto-approve file edits (see Security). For **screenshots** (URL in prompt), use `auto` or `bypassPermissions` so network/WebFetch can run without a TTY (see Troubleshooting). |
 
 ### Dashboard config (synced from SaaS)
 
@@ -136,7 +136,7 @@ Agent receives job
 - The `agentSecret` (`fmui_sk_xxx`) is stored only on your server. The SaaS stores only its `sha256` hash.
 - The WebSocket channel is private — authenticated per session with an HMAC signature.
 - Add `.fixmyui.json` to your `.gitignore` (or use env vars) to avoid committing the secret.
-- **Claude permission mode:** the agent runs with `--permission-mode acceptEdits` by default so Claude Code can write files **without a human at the terminal**. Use only on **trusted** staging/build hosts. For stricter control use `default` or `plan` (Claude may stall waiting for approval). `bypassPermissions` is the most permissive — sandbox only.
+- **Claude permission mode:** the agent runs with `--permission-mode acceptEdits` by default so Claude Code can write files **without a human at the terminal**. That does **not** always include network tools (e.g. `WebFetch` to load the PM’s screenshot URL). If Claude says it needs permission to download the image, switch to **`auto`** (auto-approves tools with safety checks) or **`bypassPermissions`** only on isolated build/staging machines. Use only on **trusted** hosts. For stricter control use `default` or `plan` (Claude may stall waiting for approval).
 
 ---
 
@@ -149,4 +149,5 @@ Agent receives job
 | Jobs not received | Run `fixmyui test` to verify WebSocket connectivity |
 | Push fails | Ensure the server has push access to the repo (`git push` manually) |
 | "approve file edit permission" / edits not applied | Normal in default Claude mode without a TTY. The agent uses `acceptEdits` by default; set `FIXMYUI_CLAUDE_PERMISSION_MODE=acceptEdits` or add `"claudePermissionMode": "acceptEdits"` to `.fixmyui.json` |
+| Claude needs permission to **download / fetch the screenshot** (URL in prompt) | `acceptEdits` does not auto-approve all network tools. Set `FIXMYUI_CLAUDE_PERMISSION_MODE=auto` (recommended on staging) or `bypassPermissions` (sandbox/CI only). Or add [Claude Code permissions](https://docs.anthropic.com/en/docs/claude-code/sdk/sdk-permissions) in `~/.claude/settings.json` or `<repo>/.claude/settings.json` to allow `WebFetch` for your R2/public domain (e.g. `"WebFetch(pub-*.r2.dev:*)"` or your CDN host). Restart the agent after changing env. |
 | `Missing agentSecret` with PM2 | PM2 may use a different working directory. Use `--config`: `pm2 start fixmyui -- start --config /var/www/.fixmyui.json`. Don't forget `-- start` (double dash) to pass args to fixmyui. |

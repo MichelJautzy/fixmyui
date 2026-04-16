@@ -48,12 +48,29 @@ La config agent-relevant (`branchStrategy`, `autoPush`, `postCommands`, `preview
 2. `git.assertIsRepo()` — vérifie que c'est un repo git
 3. `git.checkoutBranch(branchName)` — crée la branche
 4. Récupère `payload.compiled_prompt` (construit par le SaaS) — aucun build local
-5. `#runClaude(jobId, compiled_prompt)` — exécute Claude avec streaming
-6. `git.isDirty()` → `git.addAll()` → `git.commit()` — commit si changements
-7. `git.push()` — push si `autoPush`
-8. `saas.complete()` — rapport de succès
+5. **Screenshot prefetch** (fixmyui ≥ 2.0.1, voir section dédiée) — si `screenshot_url` présent : download dans `.fixmyui-tmp/` et rewrite de l'URL en chemin local dans le prompt
+6. `#runClaude(jobId, compiled_prompt)` — exécute Claude avec streaming
+7. `git.isDirty()` → `git.addAll()` → `git.commit()` — commit si changements
+8. `git.push()` — push si `autoPush`
+9. `saas.complete()` — rapport de succès
+10. `finally` : `screenshotCleanup()` — supprime le fichier local téléchargé
 
-En cas d'erreur : `saas.fail()` + `git.checkoutExisting(originalBranch)`
+En cas d'erreur : `saas.fail()` + `git.checkoutExisting(originalBranch)` (le cleanup screenshot est toujours exécuté).
+
+### Screenshot prefetch (`ScreenshotPrefetcher.js`, fixmyui ≥ 2.0.1)
+
+Le SaaS injecte l'URL publique du screenshot (bucket R2/S3) directement dans `compiled_prompt`. En `claude -p` sans TTY, Claude Code peut refuser de fetch le réseau (même en `acceptEdits`) car il n'a personne pour accorder la permission.
+
+Solution auto-portante : l'agent **télécharge lui-même** l'image avant de spawn Claude, puis remplace l'URL par un chemin local. Claude utilise ensuite son outil `Read` (qui supporte nativement PNG/JPG/WebP/GIF) — aucune permission réseau requise.
+
+- **Répertoire** : `<repoPath>/.fixmyui-tmp/screenshot-<jobId>.<ext>`
+- **Git** : la ligne `.fixmyui-tmp/` est ajoutée à `.git/info/exclude` au premier job (exclusion **locale**, jamais committée). `git add -A` ne la voit pas.
+- **Garde-fous** : timeout 15 s, cap 20 Mo, vérification `content-type: image/*`, UUID-safe filename, cleanup dans `finally`.
+- **Fallback** : si le download échoue (404, DNS, timeout…), l'agent garde l'URL d'origine dans le prompt et log un warning — comportement identique à fixmyui 2.0.0. Dans ce cas, Claude retentera un `WebFetch` → cf. section permissions ci-dessous pour débloquer.
+
+API (module `src/agent/ScreenshotPrefetcher.js`) :
+- `prefetchScreenshot(url, { repoPath, jobId })` → `{ localPath, cleanup }`
+- `rewritePromptWithLocalScreenshot(prompt, url, localPath)` → nouveau prompt (idempotent)
 
 ### Version reporting
 
@@ -107,12 +124,14 @@ Le parsing stream-json gère les types d'événements :
 
 | Mode | Description |
 |------|-------------|
-| `acceptEdits` | Auto-approve les éditions fichiers (défaut, recommandé staging) |
-| `bypassPermissions` | Sandbox complet, le plus permissif |
+| `acceptEdits` | Auto-approve les éditions fichiers (défaut). **Ne couvre pas** systématiquement les outils réseau (`WebFetch` pour l’URL du screenshot dans le prompt) — en `-p` sans TTY, Claude peut dire qu’il manque la permission pour télécharger l’image. |
+| `auto` | Auto-approve les appels d’outils avec garde-fous (souvent adapté si le prompt contient une URL screenshot à fetch). |
+| `bypassPermissions` | Le plus permissif — réservé à un runner isolé / CI. |
 | `default` | Demande approbation (bloquant sans TTY) |
 | `dontAsk` | Ne demande pas mais refuse silencieusement |
 | `plan` | Mode planification uniquement |
-| `auto` | Mode automatique |
+
+Alternative sans changer le mode : règles `permissions` / hooks dans `.claude/settings.json` du repo ou du home pour autoriser `WebFetch` vers le domaine public R2 / CDN (voir doc Anthropic « Configure permissions »).
 
 ---
 
