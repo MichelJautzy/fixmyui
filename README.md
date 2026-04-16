@@ -77,6 +77,20 @@ These settings are managed on the [FixMyUI dashboard](https://fixmyui.com/fixmyu
 | Post-commands | — | Shell commands to run after Claude finishes |
 | Preview URL | `FIXMYUI_PREVIEW_URL_TEMPLATE` | e.g. `https://staging.myapp.com?branch={branch}` |
 | Prompt rules | — | Instructions prepended to every Claude prompt |
+| Stop behavior | — | Action on user "Stop": `git_stash` (default, reversible), `git_restore` (discards), or `none` |
+
+### Stop / cancel jobs
+
+Users can hit **Stop** in the FixMyUI widget or the dashboard at any time during a running job. The SaaS broadcasts a `job-cancel` event on the agent's private channel; the agent then:
+
+1. Sends `SIGTERM` to the running Claude process.
+2. Runs the configured `stop_behavior` in the repo:
+   - `git_stash` — `git stash push -u -m "fixmyui-job-{id}"` (reversible with `git stash pop`)
+   - `git_restore` — `git restore --staged . && git restore .` (discards uncommitted changes)
+   - `none` — nothing
+3. Reports the job as cancelled (`POST /api/fixmyui/agent/jobs/{id}/fail` with `cancelled: true`).
+
+The default is `git_stash` so no work is ever lost.
 
 **Global CLI option:** `--config <path>` (or `-c`) — explicit path to `.fixmyui.json`, works with all commands. Useful when the config file is not in the current directory (PM2, cron, systemd, Docker).
 

@@ -32,7 +32,9 @@ Orchestrateur principal. Relie toutes les pièces : WebSocket → Claude → Git
 
 ### Sync config distante (push + pull)
 
-La config agent-relevant (`branchStrategy`, `autoPush`, `postCommands`, `previewUrlTemplate`, `promptRules`, `branchName`) est synchronisée depuis le SaaS. Le `.fixmyui.json` ne sert que d'identité locale.
+La config agent-relevant (`branchStrategy`, `autoPush`, `postCommands`, `previewUrlTemplate`, `branchName`) est synchronisée depuis le SaaS. Le `.fixmyui.json` ne sert que d'identité locale.
+
+> Depuis fixmyui 2.0.0, la construction du prompt Claude (règles admin, politiques fichiers, contexte global, historique, contexte DOM, screenshot, message PM) est faite côté SaaS via `App\Modules\Fixmyui\Services\FixmyuiPromptBuilder`. L'agent reçoit directement `compiled_prompt` dans le payload `new-job` et le passe tel quel à `claude -p`. Les anciens champs `promptRules` / `aiPolicies` / `globalContext` ne sont plus synchronisés.
 
 **Précédence** : `env var > remote SaaS > .fixmyui.json > default`
 
@@ -42,11 +44,11 @@ La config agent-relevant (`branchStrategy`, `autoPush`, `postCommands`, `preview
 
 ### Pipeline `handleJob()`
 
-1. `syncRemoteConfig()` — fetch et merge la config distante
+1. `syncRemoteConfig()` — fetch et merge la config distante (git / postCommands seulement)
 2. `git.assertIsRepo()` — vérifie que c'est un repo git
 3. `git.checkoutBranch(branchName)` — crée la branche
-4. `ClaudeRunner.buildPrompt()` — construit le prompt
-5. `#runClaude()` — exécute Claude avec streaming
+4. Récupère `payload.compiled_prompt` (construit par le SaaS) — aucun build local
+5. `#runClaude(jobId, compiled_prompt)` — exécute Claude avec streaming
 6. `git.isDirty()` → `git.addAll()` → `git.commit()` — commit si changements
 7. `git.push()` — push si `autoPush`
 8. `saas.complete()` — rapport de succès
@@ -85,17 +87,9 @@ Spawne le CLI `claude` en subprocess et parse le flux `stream-json`.
 | `error` | `Error` | Erreur process (ENOENT, exit code != 0) |
 | `done` | `string` | Process terminé proprement (avec le resultText) |
 
-### `buildPrompt(job)` (statique)
+### Prompt (construit côté SaaS)
 
-Construit le prompt envoyé à Claude à partir du job :
-- Historique des turns précédents (si conversation multi-tour)
-- URL de la page concernée
-- Élément DOM sélectionné (HTML + XPath)
-- Screenshot de la zone ciblée (URL publique, si fourni par le PM via le widget)
-- Message du PM
-- Instructions : appliquer le changement, ne pas commit, ne pas casser l'existant
-
-Si `screenshot_url` est présent, le prompt inclut l'URL avec une instruction demandant à Claude d'analyser l'image pour comprendre l'état visuel actuel de l'UI.
+Depuis fixmyui 2.0.0, la méthode statique `buildPrompt` n'existe plus dans ce fichier. Le prompt envoyé à `claude -p` est compilé par le SaaS (`App\Modules\Fixmyui\Services\FixmyuiPromptBuilder`) et livré dans le payload `new-job` sous la clé `compiled_prompt`. L'agent se contente de le passer tel quel à `run(prompt)`.
 
 ### `run(prompt)`
 
@@ -130,7 +124,7 @@ Client WebSocket basé sur `pusher-js` pour communiquer avec Laravel Reverb.
 
 | Événement | Payload | Description |
 |-----------|---------|-------------|
-| `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, html_context, element_xpath, screenshot_url, history }`) |
+| `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, screenshot_url, compiled_prompt }`) |
 | `config-updated` | `object` | Config agent-relevant modifiée depuis le dashboard |
 | `connected` | — | Connexion WebSocket établie |
 | `disconnected` | — | Déconnexion WebSocket |

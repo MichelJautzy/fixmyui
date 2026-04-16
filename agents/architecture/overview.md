@@ -49,9 +49,9 @@ Agent reçoit le job sur private-fixmyui.agent.{installationId}
   │
   ├─ 1. git checkout -b {prefix}/{job_id_short}
   │
-  ├─ 2. ClaudeRunner.buildPrompt() → construit le prompt avec contexte + historique
+  ├─ 2. récupère payload.compiled_prompt (déjà compilé côté SaaS par FixmyuiPromptBuilder)
   │
-  ├─ 3. spawn claude -p "<prompt>" --output-format stream-json --permission-mode acceptEdits
+  ├─ 3. spawn claude -p "<compiled_prompt>" --output-format stream-json --permission-mode acceptEdits
   │     │
   │     ├─ thinking → POST /agent/jobs/{id}/progress (type: thinking)
   │     ├─ action  → POST /agent/jobs/{id}/progress (type: action)
@@ -100,7 +100,8 @@ Ces champs ne sont **pas** dans `.fixmyui.json`. Ils sont récupérés du SaaS a
 | `autoPush` | `FIXMYUI_AUTO_PUSH` |
 | `postCommands` | — |
 | `previewUrlTemplate` | `FIXMYUI_PREVIEW_URL_TEMPLATE` |
-| `promptRules` | — |
+
+> `prompt_rules`, `ai_policies`, `global_context` ne sont plus synchronisés côté agent : depuis 2.0.0, le prompt Claude complet (`compiled_prompt`) est construit côté SaaS et envoyé dans le payload `new-job`.
 
 ### Flag global `--config`
 

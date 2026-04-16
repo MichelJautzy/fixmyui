@@ -114,6 +114,10 @@ export class ReverbClient extends EventEmitter {
     this.#channel.bind('config-updated', (payload) => {
       this.emit('config-updated', payload);
     });
+
+    this.#channel.bind('job-cancel', (payload) => {
+      this.emit('job-cancel', payload);
+    });
   }
 
   /**

@@ -36,6 +36,8 @@ export class Agent {
   #git;
   #originalBranch = null;
   #activeRunner = null;
+  #activeJobId = null;
+  #cancelledJobs = new Set();
 
   /**
    * @param {import('../Config.js').Config} config
@@ -82,7 +84,74 @@ export class Agent {
       });
     });
 
+    this.#reverb.on('job-cancel', (payload) => {
+      this.handleJobCancel(payload).catch((err) => {
+        this.log(`[fixmyui] Unhandled cancel error: ${err.message}`);
+      });
+    });
+
     this.#reverb.connect(installationId);
+  }
+
+  /**
+   * Handle a 'job-cancel' event broadcast from the SaaS.
+   * Kills Claude (SIGTERM), applies the configured stop_behavior, and reports
+   * a cancelled fail to the SaaS (idempotent — SaaS already marked it cancelled).
+   */
+  async handleJobCancel(payload) {
+    const { job_id, stop_behavior = 'git_stash' } = payload || {};
+    if (!job_id) return;
+
+    this.#cancelledJobs.add(job_id);
+
+    if (this.#activeJobId !== job_id) {
+      this.log(`[fixmyui] job-cancel for ${job_id}: not the active job (current=${this.#activeJobId ?? 'none'}), ignoring process kill.`);
+      return;
+    }
+
+    this.log(`[fixmyui] Cancellation requested for job ${job_id} (stop_behavior=${stop_behavior})`);
+
+    if (this.#activeRunner) {
+      try { this.#activeRunner.kill(); } catch { /* best-effort */ }
+      this.#activeRunner = null;
+    }
+
+    await this.#applyStopBehavior(job_id, stop_behavior).catch((err) => {
+      this.log(`[fixmyui] stop_behavior error: ${err.message}`);
+    });
+
+    await this.#saas.fail(job_id, 'Cancelled by user', { cancelled: true }).catch(() => {});
+  }
+
+  /**
+   * Execute the configured stop_behavior in the agent's repo.
+   *   git_restore  → restore --staged . && restore . (DISCARDS changes)
+   *   git_stash    → git stash push -u -m "fixmyui-job-{id}" (REVERSIBLE)
+   *   none         → do nothing
+   */
+  async #applyStopBehavior(jobId, stopBehavior) {
+    const repo = this.#config.repoPath;
+    if (stopBehavior === 'none') return;
+
+    if (stopBehavior === 'git_stash') {
+      try {
+        const label = `fixmyui-job-${String(jobId).slice(0, 8)}`;
+        await execFileAsync('git', ['stash', 'push', '-u', '-m', label], { cwd: repo, maxBuffer: 4 * 1024 * 1024 });
+        this.log(`[fixmyui] Stashed uncommitted changes as "${label}"`);
+      } catch (err) {
+        if (!/No local changes to save/i.test(err?.stderr ?? err?.message ?? '')) throw err;
+      }
+      return;
+    }
+
+    if (stopBehavior === 'git_restore') {
+      await execFileAsync('git', ['restore', '--staged', '.'], { cwd: repo, maxBuffer: 4 * 1024 * 1024 }).catch(() => {});
+      await execFileAsync('git', ['restore', '.'], { cwd: repo, maxBuffer: 4 * 1024 * 1024 });
+      this.log('[fixmyui] Restored working tree (uncommitted changes discarded).');
+      return;
+    }
+
+    this.log(`[fixmyui] Unknown stop_behavior "${stopBehavior}" — skipping.`);
   }
 
   /**
@@ -105,7 +174,7 @@ export class Agent {
   async handleJob(payload) {
     await this.syncRemoteConfig();
 
-    const { job_id, message, page_url, html_context, element_xpath, screenshot_url, history = [] } = payload;
+    const { job_id, message, page_url, screenshot_url, compiled_prompt } = payload;
     const {
       branchStrategy, branchPrefix, branchName: fixedBranchName,
       autoPush, previewUrlTemplate, repoPath, postCommands,
@@ -113,13 +182,24 @@ export class Agent {
 
     this.log(`\n[fixmyui] Job ${job_id} received: "${message}"`);
     if (page_url) this.log(`  [context] Page: ${page_url}`);
-    if (element_xpath) this.log(`  [context] XPath: ${element_xpath}`);
-    if (html_context) this.log(`  [context] HTML: ${html_context.slice(0, 120)}${html_context.length > 120 ? '…' : ''}`);
     if (screenshot_url) this.log(`  [context] Screenshot: ${screenshot_url}`);
 
+    if (!compiled_prompt || typeof compiled_prompt !== 'string') {
+      const err = new Error('Job payload missing compiled_prompt — the SaaS version is too old for this agent. Expected compiled_prompt built server-side.');
+      this.log(`[fixmyui] ${err.message}`);
+      await this.#saas.fail(job_id, err.message).catch(() => {});
+      return;
+    }
+
     let activeBranch = null;
+    this.#activeJobId = job_id;
 
     try {
+      if (this.#cancelledJobs.has(job_id)) {
+        this.log(`[fixmyui] Job ${job_id} was cancelled before starting — skipping.`);
+        return;
+      }
+
       // ── 0. Verify git repo ────────────────────────────────────────────────
       await this.#git.assertIsRepo();
       this.#originalBranch = await this.#git.currentBranch();
@@ -144,13 +224,8 @@ export class Agent {
         this.log(`[fixmyui] Checked out ${activeBranch}`);
       }
 
-      // ── 2. Build Claude prompt ──────────────────────────────────────────
-      const prompt = ClaudeRunner.buildPrompt({
-        pm_message: message, page_url, html_context, element_xpath, screenshot_url, history,
-        prompt_rules: this.#config.promptRules,
-        ai_policies: this.#config.aiPolicies,
-        global_context: this.#config.globalContext,
-      });
+      // ── 2. Prompt comes compiled from the SaaS (single source of truth) ─
+      const prompt = compiled_prompt;
 
       // ── 3. Run Claude with streaming progress ───────────────────────────
       await this.#saas.progress(job_id, 'Claude is starting…', 'info');
@@ -206,12 +281,19 @@ export class Agent {
       this.log(`[fixmyui] Job ${job_id} completed.`);
 
     } catch (err) {
-      this.log(`[fixmyui] Job ${job_id} failed: ${err.message}`);
-      await this.#saas.fail(job_id, err.message).catch(() => {});
+      if (this.#cancelledJobs.has(job_id)) {
+        this.log(`[fixmyui] Job ${job_id} interrupted by cancellation (${err.message}).`);
+      } else {
+        this.log(`[fixmyui] Job ${job_id} failed: ${err.message}`);
+        await this.#saas.fail(job_id, err.message).catch(() => {});
+      }
 
       if (this.#originalBranch && branchStrategy !== 'local-branch') {
         await this.#git.checkoutExisting(this.#originalBranch).catch(() => {});
       }
+    } finally {
+      if (this.#activeJobId === job_id) this.#activeJobId = null;
+      this.#cancelledJobs.delete(job_id);
     }
   }
 

@@ -52,8 +52,11 @@ export class SaasClient {
    * @param {string} jobId
    * @param {string} errorMessage
    */
-  async fail(jobId, errorMessage) {
-    return this.#post(`/api/fixmyui/agent/jobs/${jobId}/fail`, { error: errorMessage });
+  async fail(jobId, errorMessage, { cancelled = false } = {}) {
+    return this.#post(`/api/fixmyui/agent/jobs/${jobId}/fail`, {
+      error: errorMessage,
+      cancelled: !!cancelled,
+    });
   }
 
   /**

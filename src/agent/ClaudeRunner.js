@@ -38,91 +38,12 @@ export class ClaudeRunner extends EventEmitter {
   }
 
   /**
-   * Build the task prompt for Claude from the job and conversation history.
-   *
-   * @param {object} job
-   * @param {string}   job.pm_message
-   * @param {string}   [job.page_url]
-   * @param {string}   [job.html_context]  Outer HTML of the element the PM selected
-   * @param {string}   [job.element_xpath] Full XPath of the selected element in the page DOM
-   * @param {string}   [job.screenshot_url] URL of a screenshot taken by the PM
-   * @param {string}   [job.prompt_rules]  Admin-defined guardrails
-   * @param {Array}    [job.history]  [{message, result, branch, screenshot_url}, ...]
-   * @returns {string}
-   */
-  static buildPrompt(job) {
-    const lines = [];
-
-    if (job.prompt_rules) {
-      lines.push('RULES (from project admin — always follow):');
-      lines.push(job.prompt_rules);
-      lines.push('');
-    }
-
-    if (job.ai_policies && job.ai_policies.length > 0) {
-      lines.push('FILE ACCESS POLICIES:');
-      for (const policy of job.ai_policies) {
-        const prefix = policy.type === 'allow' ? 'ALLOWED' : 'DENIED';
-        lines.push(`  ${prefix}: ${policy.pattern}${policy.description ? ' — ' + policy.description : ''}`);
-      }
-      lines.push('You MUST respect these policies. Do NOT modify files matching DENIED patterns.');
-      lines.push('');
-    }
-
-    if (job.global_context) {
-      lines.push('PROJECT CONTEXT (from admin):');
-      lines.push(job.global_context);
-      lines.push('');
-    }
-
-    if (job.history && job.history.length > 0) {
-      lines.push('Context — previous changes in this session:');
-      job.history.forEach((turn, i) => {
-        const branch = turn.branch ? ` (branch: ${turn.branch})` : '';
-        lines.push(`  Turn ${i + 1}: "${turn.message}" → "${turn.result}"${branch}`);
-      });
-      lines.push('');
-    }
-
-    if (job.page_url) {
-      lines.push(`Page: ${job.page_url}`);
-    }
-
-    if (job.html_context || job.element_xpath) {
-      lines.push('');
-      lines.push('Target element (selected by PM on the page):');
-      if (job.element_xpath) {
-        lines.push(`XPath: ${job.element_xpath}`);
-      }
-      if (job.html_context) {
-        lines.push('```html');
-        lines.push(job.html_context);
-        lines.push('```');
-      }
-      lines.push('');
-    }
-
-    if (job.screenshot_url) {
-      lines.push('Screenshot of the area the PM wants to modify:');
-      lines.push(job.screenshot_url);
-      lines.push('Analyze this screenshot to understand the current visual state of the UI. The PM\'s instructions refer to what is shown in this image.');
-      lines.push('');
-    }
-
-    lines.push(`Task: ${job.pm_message}`);
-    lines.push('');
-    lines.push(
-      'Apply the requested UI change to the codebase. ' +
-      'Edit only the files needed. Do not break existing functionality. ' +
-      'Do not commit — the agent will handle git operations.'
-    );
-
-    return lines.join('\n');
-  }
-
-  /**
    * Spawn the `claude` CLI with the given prompt.
    * Non-blocking — listen to events for progress.
+   *
+   * Note: the prompt text is built server-side by the SaaS
+   * (App\Modules\Fixmyui\Services\FixmyuiPromptBuilder). The agent only spawns
+   * Claude with what it receives in the `new-job` payload (`compiled_prompt`).
    *
    * @param {string} prompt
    */

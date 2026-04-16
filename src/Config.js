@@ -47,7 +47,6 @@ export function loadConfig(configPath) {
     autoPush:           envBool('FIXMYUI_AUTO_PUSH')        ?? true,
     postCommands:       [],
     previewUrlTemplate: env('FIXMYUI_PREVIEW_URL_TEMPLATE') ?? null,
-    promptRules:        null,
   };
 
   config.apiUrl = config.apiUrl.replace(/\/$/, '');
@@ -143,5 +142,4 @@ function envInt(key) {
  * @property {number|null}  reverbPort
  * @property {string|null}  reverbScheme
  * @property {string}       claudePermissionMode  acceptEdits | dontAsk | auto | plan | default | bypassPermissions
- * @property {string|null}  promptRules           Admin-defined rules prepended to every Claude prompt
  */
