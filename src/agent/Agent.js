@@ -3,7 +3,10 @@ import { promisify } from 'util';
 import { ReverbClient } from './ReverbClient.js';
 import { ClaudeRunner } from './ClaudeRunner.js';
 import { GitHelper } from './GitHelper.js';
-import { prefetchScreenshot, rewritePromptWithLocalScreenshot } from './ScreenshotPrefetcher.js';
+import {
+  prefetchAttachments,
+  rewritePromptWithLocalScreenshots,
+} from './ScreenshotPrefetcher.js';
 import { SaasClient } from '../SaasClient.js';
 import { applyRemoteConfig } from '../remoteConfig.js';
 
@@ -175,15 +178,29 @@ export class Agent {
   async handleJob(payload) {
     await this.syncRemoteConfig();
 
-    const { job_id, message, page_url, screenshot_url, compiled_prompt } = payload;
+    const { job_id, message, page_url, screenshot_url, attachments, compiled_prompt } = payload;
     const {
       branchStrategy, branchPrefix, branchName: fixedBranchName,
       autoPush, previewUrlTemplate, repoPath, postCommands,
     } = this.#config;
 
+    // Normalise attachments. Modern SaaS (>= 2026-04-16) ships `attachments`
+    // as an array of { url, name }. Older deployments only send
+    // `screenshot_url`: fall back to a single-item list for consistency.
+    const attachmentList = Array.isArray(attachments) && attachments.length > 0
+      ? attachments
+          .map((a) => (typeof a === 'string' ? { url: a } : a))
+          .filter((a) => a && typeof a.url === 'string' && a.url.length > 0)
+      : (screenshot_url ? [{ url: screenshot_url }] : []);
+
     this.log(`\n[fixmyui] Job ${job_id} received: "${message}"`);
     if (page_url) this.log(`  [context] Page: ${page_url}`);
-    if (screenshot_url) this.log(`  [context] Screenshot: ${screenshot_url}`);
+    if (attachmentList.length === 1) {
+      this.log(`  [context] Image: ${attachmentList[0].url}`);
+    } else if (attachmentList.length > 1) {
+      this.log(`  [context] ${attachmentList.length} images:`);
+      attachmentList.forEach((a, i) => this.log(`    ${i + 1}. ${a.url}`));
+    }
 
     if (!compiled_prompt || typeof compiled_prompt !== 'string') {
       const err = new Error('Job payload missing compiled_prompt — the SaaS version is too old for this agent. Expected compiled_prompt built server-side.');
@@ -193,7 +210,8 @@ export class Agent {
     }
 
     let activeBranch = null;
-    let screenshotCleanup = null;
+    /** @type {Array<{url: string, localPath: string, cleanup: () => Promise<void>}>} */
+    let prefetchedAttachments = [];
     this.#activeJobId = job_id;
 
     try {
@@ -227,25 +245,35 @@ export class Agent {
       }
 
       // ── 2. Prompt comes compiled from the SaaS (single source of truth) ─
-      //       Then locally rewrite the screenshot URL to a downloaded file so
-      //       Claude can Read it without needing any network permission.
+      //       Then locally rewrite each image URL to a downloaded file so
+      //       Claude can Read them without needing any network permission.
       let prompt = compiled_prompt;
 
-      if (screenshot_url) {
-        try {
-          await this.#saas.progress(job_id, 'Downloading screenshot…', 'info').catch(() => {});
-          const pre = await prefetchScreenshot(screenshot_url, {
-            repoPath,
-            jobId: job_id,
+      if (attachmentList.length > 0) {
+        const label = attachmentList.length === 1
+          ? 'Downloading screenshot…'
+          : `Downloading ${attachmentList.length} images…`;
+        await this.#saas.progress(job_id, label, 'info').catch(() => {});
+
+        prefetchedAttachments = await prefetchAttachments(attachmentList, {
+          repoPath,
+          jobId: job_id,
+          onError: (url, err) => {
+            this.log(`[fixmyui] Warning: prefetch failed for ${url} (${err.message}) — Claude will try the URL directly.`);
+          },
+        });
+
+        if (prefetchedAttachments.length > 0) {
+          prompt = rewritePromptWithLocalScreenshots(prompt, prefetchedAttachments);
+          prefetchedAttachments.forEach((pre, i) => {
+            this.log(`  [image ${i + 1}] Prefetched to ${pre.localPath}`);
           });
-          prompt = rewritePromptWithLocalScreenshot(prompt, screenshot_url, pre.localPath);
-          screenshotCleanup = pre.cleanup;
-          this.log(`  [screenshot] Prefetched to ${pre.localPath}`);
-        } catch (err) {
-          this.log(`[fixmyui] Warning: screenshot prefetch failed (${err.message}) — falling back to URL in prompt.`);
+        }
+
+        if (prefetchedAttachments.length < attachmentList.length) {
           await this.#saas.progress(
             job_id,
-            `Screenshot prefetch failed (${err.message}) — Claude will try the URL directly.`,
+            `Some images could not be prefetched (${prefetchedAttachments.length}/${attachmentList.length}) — Claude will try the URL(s) directly.`,
             'info',
           ).catch(() => {});
         }
@@ -316,8 +344,10 @@ export class Agent {
         await this.#git.checkoutExisting(this.#originalBranch).catch(() => {});
       }
     } finally {
-      if (screenshotCleanup) {
-        await screenshotCleanup().catch(() => { /* best-effort */ });
+      if (prefetchedAttachments.length > 0) {
+        await Promise.all(
+          prefetchedAttachments.map((p) => p.cleanup().catch(() => { /* best-effort */ })),
+        );
       }
       if (this.#activeJobId === job_id) this.#activeJobId = null;
       this.#cancelledJobs.delete(job_id);

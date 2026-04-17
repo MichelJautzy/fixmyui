@@ -69,11 +69,11 @@ async function ensureGitExclude(repoPath) {
 }
 
 /**
- * Download the screenshot at `url` into the repo's local tmp dir and return
- * the absolute local path plus a cleanup fn.
+ * Download one image at `url` into the repo's local tmp dir and return the
+ * absolute local path plus a cleanup fn.
  *
- * @param {string} url                                       HTTP(S) URL of the screenshot
- * @param {{ repoPath: string, jobId: string, fetchImpl?: typeof fetch, timeoutMs?: number, maxBytes?: number }} opts
+ * @param {string} url                                       HTTP(S) URL of the image
+ * @param {{ repoPath: string, jobId: string, index?: number, fetchImpl?: typeof fetch, timeoutMs?: number, maxBytes?: number }} opts
  * @returns {Promise<{ localPath: string, cleanup: () => Promise<void> }>}
  * @throws if the URL is not reachable / not an image / too large.
  */
@@ -81,6 +81,7 @@ export async function prefetchScreenshot(url, opts = {}) {
   const {
     repoPath,
     jobId,
+    index = 0,
     fetchImpl = globalThis.fetch,
     timeoutMs = 15000,
     maxBytes = 20 * 1024 * 1024, // 20 MB safety cap
@@ -123,7 +124,8 @@ export async function prefetchScreenshot(url, opts = {}) {
 
   const ext = EXT_FROM_CONTENT_TYPE[contentType] || guessExtFromUrl(url) || 'png';
   const safeJobId = String(jobId || 'job').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || 'job';
-  const filename = `screenshot-${safeJobId}.${ext}`;
+  const safeIndex = Number.isInteger(index) && index >= 0 ? index : 0;
+  const filename = `screenshot-${safeJobId}-${String(safeIndex).padStart(2, '0')}.${ext}`;
   const filePath = path.join(dir, filename);
 
   await fs.writeFile(filePath, buf);
@@ -141,17 +143,41 @@ export async function prefetchScreenshot(url, opts = {}) {
 }
 
 /**
+ * Download every image in `attachments` into the repo's local tmp dir.
+ *
+ * @param {Array<{url: string, name?: string|null}|string>} attachments
+ * @param {{ repoPath: string, jobId: string, fetchImpl?: typeof fetch, timeoutMs?: number, maxBytes?: number, onError?: (url: string, err: Error) => void }} opts
+ * @returns {Promise<Array<{url: string, localPath: string, cleanup: () => Promise<void>}>>}
+ *          — one entry per SUCCESSFULLY downloaded attachment (failures are
+ *          reported to `onError` but do not reject the whole batch).
+ */
+export async function prefetchAttachments(attachments, opts = {}) {
+  const list = Array.isArray(attachments) ? attachments : [];
+  if (list.length === 0) return [];
+
+  const { onError } = opts;
+  const results = await Promise.all(list.map(async (att, i) => {
+    const url = typeof att === 'string' ? att : (att?.url ?? '');
+    if (!url) return null;
+    try {
+      const pre = await prefetchScreenshot(url, { ...opts, index: i });
+      return { url, localPath: pre.localPath, cleanup: pre.cleanup };
+    } catch (err) {
+      if (typeof onError === 'function') onError(url, err);
+      return null;
+    }
+  }));
+
+  return results.filter(Boolean);
+}
+
+/**
  * Replace a screenshot URL inside the compiled prompt with an instruction
  * that points to the local file. Claude Code's built-in `Read` tool opens
  * image files natively, so no network fetch is needed.
  *
  * Idempotent: if the URL is not found (SaaS format changed), the prompt is
  * returned unchanged.
- *
- * @param {string} prompt      The compiled prompt text from the SaaS
- * @param {string} url         The URL to replace
- * @param {string} localPath   Absolute path to the downloaded screenshot
- * @returns {string}
  */
 export function rewritePromptWithLocalScreenshot(prompt, url, localPath) {
   if (!prompt || !url || !localPath) return prompt;
@@ -159,9 +185,28 @@ export function rewritePromptWithLocalScreenshot(prompt, url, localPath) {
 
   const replacement =
     `Local file: ${localPath}\n` +
-    `(The FixMyUI agent has already downloaded the screenshot to this path — ` +
-    `open it with your Read tool to view the image. Do NOT attempt to fetch ` +
+    `(The FixMyUI agent has already downloaded the image to this path — ` +
+    `open it with your Read tool to view it. Do NOT attempt to fetch ` +
     `the network URL.)`;
 
   return prompt.split(url).join(replacement);
+}
+
+/**
+ * Replace multiple URLs at once. Each prefetched attachment must expose
+ * `url` and `localPath`. Returns the new prompt.
+ *
+ * @param {string} prompt
+ * @param {Array<{url: string, localPath: string}>} prefetched
+ * @returns {string}
+ */
+export function rewritePromptWithLocalScreenshots(prompt, prefetched) {
+  if (!prompt || !Array.isArray(prefetched)) return prompt;
+  let out = prompt;
+  for (const item of prefetched) {
+    if (item?.url && item?.localPath) {
+      out = rewritePromptWithLocalScreenshot(out, item.url, item.localPath);
+    }
+  }
+  return out;
 }

@@ -48,29 +48,33 @@ La config agent-relevant (`branchStrategy`, `autoPush`, `postCommands`, `preview
 2. `git.assertIsRepo()` — vérifie que c'est un repo git
 3. `git.checkoutBranch(branchName)` — crée la branche
 4. Récupère `payload.compiled_prompt` (construit par le SaaS) — aucun build local
-5. **Screenshot prefetch** (fixmyui ≥ 2.0.1, voir section dédiée) — si `screenshot_url` présent : download dans `.fixmyui-tmp/` et rewrite de l'URL en chemin local dans le prompt
+5. **Attachment prefetch** (fixmyui ≥ 2.0.2, voir section dédiée) — normalise `attachments[]` (fallback `screenshot_url` unique pour SaaS < 2026-04-16), download de toutes les images dans `.fixmyui-tmp/` en parallèle, rewrite de chaque URL en chemin local dans le prompt
 6. `#runClaude(jobId, compiled_prompt)` — exécute Claude avec streaming
 7. `git.isDirty()` → `git.addAll()` → `git.commit()` — commit si changements
 8. `git.push()` — push si `autoPush`
 9. `saas.complete()` — rapport de succès
-10. `finally` : `screenshotCleanup()` — supprime le fichier local téléchargé
+10. `finally` : cleanup de chaque image téléchargée (unlink + rmdir `.fixmyui-tmp/` si vide)
 
-En cas d'erreur : `saas.fail()` + `git.checkoutExisting(originalBranch)` (le cleanup screenshot est toujours exécuté).
+En cas d'erreur : `saas.fail()` + `git.checkoutExisting(originalBranch)` (le cleanup des attachments est toujours exécuté).
 
-### Screenshot prefetch (`ScreenshotPrefetcher.js`, fixmyui ≥ 2.0.1)
+### Attachment prefetch (`ScreenshotPrefetcher.js`, fixmyui ≥ 2.0.2)
 
-Le SaaS injecte l'URL publique du screenshot (bucket R2/S3) directement dans `compiled_prompt`. En `claude -p` sans TTY, Claude Code peut refuser de fetch le réseau (même en `acceptEdits`) car il n'a personne pour accorder la permission.
+Le SaaS injecte les URLs publiques des images (bucket R2/S3) directement dans `compiled_prompt` — une capture live prise par le widget, ou plusieurs images si le user a utilisé le bouton upload / le drag-and-drop (jusqu'à 10 par message). En `claude -p` sans TTY, Claude Code peut refuser de fetch le réseau (même en `acceptEdits`) car il n'a personne pour accorder la permission.
 
-Solution auto-portante : l'agent **télécharge lui-même** l'image avant de spawn Claude, puis remplace l'URL par un chemin local. Claude utilise ensuite son outil `Read` (qui supporte nativement PNG/JPG/WebP/GIF) — aucune permission réseau requise.
+Solution auto-portante : l'agent **télécharge lui-même chaque image** avant de spawn Claude, puis remplace chaque URL par un chemin local. Claude utilise ensuite son outil `Read` (qui supporte nativement PNG/JPG/WebP/GIF) — aucune permission réseau requise.
 
-- **Répertoire** : `<repoPath>/.fixmyui-tmp/screenshot-<jobId>.<ext>`
+- **Répertoire** : `<repoPath>/.fixmyui-tmp/screenshot-<jobId>-<NN>.<ext>` (index zéro-paddé `00`, `01`, …)
 - **Git** : la ligne `.fixmyui-tmp/` est ajoutée à `.git/info/exclude` au premier job (exclusion **locale**, jamais committée). `git add -A` ne la voit pas.
-- **Garde-fous** : timeout 15 s, cap 20 Mo, vérification `content-type: image/*`, UUID-safe filename, cleanup dans `finally`.
-- **Fallback** : si le download échoue (404, DNS, timeout…), l'agent garde l'URL d'origine dans le prompt et log un warning — comportement identique à fixmyui 2.0.0. Dans ce cas, Claude retentera un `WebFetch` → cf. section permissions ci-dessous pour débloquer.
+- **Parallélisme** : `Promise.all` sur tout le batch — une image qui échoue n'abort pas les autres.
+- **Garde-fous par image** : timeout 15 s, cap 20 Mo, vérification `content-type: image/*`, UUID-safe filename, cleanup dans `finally`.
+- **Fallback** : les images non téléchargées (404, DNS, timeout…) restent en URL dans le prompt et un warning est loggé. Claude retentera alors un `WebFetch` — cf. section permissions ci-dessous pour débloquer.
+- **Compat** : si le SaaS est antérieur au 2026-04-16 (`attachments` absent du payload), l'agent retombe sur `screenshot_url` et se comporte comme 2.0.1.
 
 API (module `src/agent/ScreenshotPrefetcher.js`) :
-- `prefetchScreenshot(url, { repoPath, jobId })` → `{ localPath, cleanup }`
-- `rewritePromptWithLocalScreenshot(prompt, url, localPath)` → nouveau prompt (idempotent)
+- `prefetchScreenshot(url, { repoPath, jobId, index })` → `{ localPath, cleanup }`
+- `prefetchAttachments(list, { repoPath, jobId, onError })` → `Array<{ url, localPath, cleanup }>` (seulement les succès)
+- `rewritePromptWithLocalScreenshot(prompt, url, localPath)` — une URL
+- `rewritePromptWithLocalScreenshots(prompt, prefetched)` — batch
 
 ### Version reporting
 
@@ -143,7 +147,7 @@ Client WebSocket basé sur `pusher-js` pour communiquer avec Laravel Reverb.
 
 | Événement | Payload | Description |
 |-----------|---------|-------------|
-| `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, screenshot_url, compiled_prompt }`) |
+| `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, screenshot_url, attachments, compiled_prompt }`) |
 | `config-updated` | `object` | Config agent-relevant modifiée depuis le dashboard |
 | `connected` | — | Connexion WebSocket établie |
 | `disconnected` | — | Déconnexion WebSocket |
