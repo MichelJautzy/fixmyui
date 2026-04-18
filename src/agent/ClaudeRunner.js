@@ -25,16 +25,21 @@ export class ClaudeRunner extends EventEmitter {
   #proc = null;
   #repoPath;
   #permissionMode;
+  #claudeModel;
   #tokenUsage = { input: 0, output: 0 };
 
   /**
    * @param {import('../Config.js').Config} config
+   * @param {object} [opts]
+   * @param {string|null} [opts.claudeModel]  Slug forwarded as `claude --model`.
+   *   When falsy or 'auto' the flag is omitted and Claude Code uses its default.
    */
-  constructor(config) {
+  constructor(config, opts = {}) {
     super();
     this.#repoPath = config.repoPath;
     const mode = config.claudePermissionMode ?? 'acceptEdits';
     this.#permissionMode = CLAUDE_PERMISSION_MODES.has(mode) ? mode : 'acceptEdits';
+    this.#claudeModel = opts.claudeModel || null;
   }
 
   /**
@@ -56,6 +61,13 @@ export class ClaudeRunner extends EventEmitter {
       '--verbose',
       '--permission-mode', this.#permissionMode,
     ];
+
+    // Forward the per-job model selection. We omit `--model` when the SaaS
+    // sends 'auto' (the default) so Claude Code falls back to its own
+    // built-in default model.
+    if (this.#claudeModel && this.#claudeModel !== 'auto') {
+      args.push('--model', this.#claudeModel);
+    }
 
     this.#proc = spawn('claude', args, {
       cwd:   this.#repoPath,

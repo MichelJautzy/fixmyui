@@ -2,18 +2,23 @@ import fs from 'fs/promises';
 import path from 'path';
 
 /**
- * Screenshot prefetch (fixmyui >= 2.0.1)
+ * Attachment prefetch (fixmyui >= 2.0.1, multi-format since 2.1.0)
  *
- * The SaaS FixmyuiPromptBuilder injects a screenshot URL (Cloudflare R2 / S3)
+ * The SaaS FixmyuiPromptBuilder injects attachment URLs (Cloudflare R2 / S3)
  * as text inside `compiled_prompt`. On a headless `claude -p` run, Claude Code
  * may need a permission prompt to fetch that URL over the network — which is
  * impossible without a TTY.
  *
- * To stay fully self-contained, the agent downloads the screenshot locally
+ * To stay fully self-contained, the agent downloads each attachment locally
  * BEFORE spawning Claude and rewrites the prompt so Claude reads the file
  * from disk (via its built-in `Read` tool) instead of fetching it.
  *
- *   <repoPath>/.fixmyui-tmp/screenshot-<jobId>.<ext>
+ *   <repoPath>/.fixmyui-tmp/screenshot-<jobId>-<NN>.<ext>
+ *
+ * Since 2.1.0 the prefetcher accepts every file type Claude Code can ingest
+ * natively: images, PDFs, and common text/code formats. The content-type
+ * gate has been removed — anything the SaaS accepted on upload is allowed
+ * through the pipe.
  *
  * The directory is added to `.git/info/exclude` (local, not committed) so
  * `git add -A` never stages it.
@@ -26,17 +31,41 @@ const TMP_DIR = '.fixmyui-tmp';
 const EXCLUDE_ENTRY = `${TMP_DIR}/`;
 
 const EXT_FROM_CONTENT_TYPE = {
+  // images
   'image/png': 'png',
   'image/jpeg': 'jpg',
   'image/jpg': 'jpg',
   'image/webp': 'webp',
   'image/gif': 'gif',
+  'image/svg+xml': 'svg',
+  // pdf
+  'application/pdf': 'pdf',
+  // text / code
+  'text/html': 'html',
+  'text/css': 'css',
+  'text/plain': 'txt',
+  'text/csv': 'csv',
+  'text/markdown': 'md',
+  'text/javascript': 'js',
+  'application/javascript': 'js',
+  'application/json': 'json',
+  'application/xml': 'xml',
+  'text/xml': 'xml',
+  'application/x-yaml': 'yaml',
+  'text/yaml': 'yaml',
 };
+
+const KNOWN_EXTENSIONS = [
+  'png', 'jpg', 'jpeg', 'webp', 'gif', 'svg',
+  'pdf',
+  'html', 'htm', 'css', 'js', 'json', 'md', 'txt', 'csv', 'xml',
+  'yaml', 'yml', 'ts', 'tsx', 'jsx', 'vue', 'php',
+];
 
 function guessExtFromUrl(url) {
   try {
     const { pathname } = new URL(url);
-    const m = pathname.toLowerCase().match(/\.(png|jpe?g|webp|gif)(?:$|[?#])/);
+    const m = pathname.toLowerCase().match(new RegExp(`\\.(${KNOWN_EXTENSIONS.join('|')})(?:$|[?#])`));
     if (!m) return null;
     return m[1] === 'jpeg' ? 'jpg' : m[1];
   } catch {
@@ -84,7 +113,7 @@ export async function prefetchScreenshot(url, opts = {}) {
     index = 0,
     fetchImpl = globalThis.fetch,
     timeoutMs = 15000,
-    maxBytes = 20 * 1024 * 1024, // 20 MB safety cap
+    maxBytes = 30 * 1024 * 1024, // 30 MB safety cap (server caps uploads at 20 MB; headroom for redirects/headers)
   } = opts;
 
   if (!url) throw new Error('prefetchScreenshot: url is required');
@@ -112,17 +141,26 @@ export async function prefetchScreenshot(url, opts = {}) {
   }
 
   const contentType = (res.headers.get('content-type') || '').split(';')[0].trim().toLowerCase();
-  if (contentType && !contentType.startsWith('image/')) {
-    throw new Error(`Unexpected content-type "${contentType}" (expected image/*)`);
-  }
 
   const buf = Buffer.from(await res.arrayBuffer());
-  if (buf.byteLength === 0) throw new Error('Empty screenshot body');
+  if (buf.byteLength === 0) throw new Error('Empty attachment body');
   if (buf.byteLength > maxBytes) {
-    throw new Error(`Screenshot too large: ${buf.byteLength} bytes (cap: ${maxBytes})`);
+    throw new Error(`Attachment too large: ${buf.byteLength} bytes (cap: ${maxBytes})`);
   }
 
-  const ext = EXT_FROM_CONTENT_TYPE[contentType] || guessExtFromUrl(url) || 'png';
+  // Resolve the on-disk extension. Order:
+  //   1. content-type → known map
+  //   2. URL path → known extension
+  //   3. raw subtype after `application/` or `text/` (e.g. `application/pdf` → `pdf`)
+  //   4. generic fallback (`bin`)
+  let ext = EXT_FROM_CONTENT_TYPE[contentType] || guessExtFromUrl(url);
+  if (!ext && contentType) {
+    const sub = contentType.split('/')[1] || '';
+    if (sub && /^[a-z0-9.+-]{1,12}$/i.test(sub)) {
+      ext = sub.replace(/^x-/, '').replace(/\+.*$/, '');
+    }
+  }
+  if (!ext) ext = 'bin';
   const safeJobId = String(jobId || 'job').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 40) || 'job';
   const safeIndex = Number.isInteger(index) && index >= 0 ? index : 0;
   const filename = `screenshot-${safeJobId}-${String(safeIndex).padStart(2, '0')}.${ext}`;
@@ -172,9 +210,9 @@ export async function prefetchAttachments(attachments, opts = {}) {
 }
 
 /**
- * Replace a screenshot URL inside the compiled prompt with an instruction
+ * Replace an attachment URL inside the compiled prompt with an instruction
  * that points to the local file. Claude Code's built-in `Read` tool opens
- * image files natively, so no network fetch is needed.
+ * images, PDFs and text files natively, so no network fetch is needed.
  *
  * Idempotent: if the URL is not found (SaaS format changed), the prompt is
  * returned unchanged.
@@ -185,7 +223,7 @@ export function rewritePromptWithLocalScreenshot(prompt, url, localPath) {
 
   const replacement =
     `Local file: ${localPath}\n` +
-    `(The FixMyUI agent has already downloaded the image to this path — ` +
+    `(The FixMyUI agent has already downloaded the file to this path — ` +
     `open it with your Read tool to view it. Do NOT attempt to fetch ` +
     `the network URL.)`;
 

@@ -178,7 +178,7 @@ export class Agent {
   async handleJob(payload) {
     await this.syncRemoteConfig();
 
-    const { job_id, message, page_url, screenshot_url, attachments, compiled_prompt } = payload;
+    const { job_id, message, page_url, screenshot_url, attachments, compiled_prompt, claude_model } = payload;
     const {
       branchStrategy, branchPrefix, branchName: fixedBranchName,
       autoPush, previewUrlTemplate, repoPath, postCommands,
@@ -280,9 +280,12 @@ export class Agent {
       }
 
       // ── 3. Run Claude with streaming progress ───────────────────────────
-      await this.#saas.progress(job_id, 'Claude is starting…', 'info');
+      const modelLabel = (claude_model && claude_model !== 'auto')
+        ? `Claude (${claude_model}) is starting…`
+        : 'Claude is starting…';
+      await this.#saas.progress(job_id, modelLabel, 'info');
       const jobStartTime = Date.now();
-      const { resultText, tokenUsage } = await this.#runClaude(job_id, prompt, repoPath);
+      const { resultText, tokenUsage } = await this.#runClaude(job_id, prompt, claude_model);
       const durationSeconds = Math.round((Date.now() - jobStartTime) / 1000);
 
       // ── 4. Commit changes ───────────────────────────────────────────────
@@ -374,11 +377,16 @@ export class Agent {
 
   /**
    * Run ClaudeRunner and forward all events as progress reports.
+   * @param {string} jobId
+   * @param {string} prompt
+   * @param {string|null|undefined} claudeModel  Slug for `claude --model`.
+   *   When falsy or 'auto', the runner skips `--model` so Claude Code uses
+   *   its built-in default. Per-job choice; can vary between conversations.
    * @returns {Promise<{resultText: string, tokenUsage: {input: number, output: number}}>}
    */
-  #runClaude(jobId, prompt) {
+  #runClaude(jobId, prompt, claudeModel = null) {
     return new Promise((resolve, reject) => {
-      const runner = new ClaudeRunner(this.#config);
+      const runner = new ClaudeRunner(this.#config, { claudeModel });
       this.#activeRunner = runner;
 
       runner.on('thinking', async (text) => {

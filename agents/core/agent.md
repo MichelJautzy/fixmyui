@@ -26,8 +26,8 @@ Orchestrateur principal. Relie toutes les pièces : WebSocket → Claude → Git
 | `constructor(config, { log })` | Instancie SaasClient et GitHelper |
 | `connect(installationId)` | Ouvre le WebSocket, écoute les événements `job`, `config-updated`, `connected`, `error`, `disconnected` |
 | `syncRemoteConfig()` | Fetch `GET /api/fixmyui/agent/me` et merge les champs agent-relevant dans `#config` (env vars prioritaires) |
-| `handleJob(payload)` | Pipeline complet : sync config → branch → Claude → commit → push → report |
-| `#runClaude(jobId, prompt)` | Spawne ClaudeRunner, forward les events thinking/action/info vers le SaaS en temps réel |
+| `handleJob(payload)` | Pipeline complet : sync config → branch → Claude → commit → push → report. Lit `payload.claude_model` (peut être `null` ou `'auto'`) et le passe à `#runClaude` |
+| `#runClaude(jobId, prompt, claudeModel)` | Spawne ClaudeRunner avec le modèle demandé, forward les events thinking/action/info vers le SaaS en temps réel |
 | `disconnect()` | Kill le runner actif + déconnecte le WebSocket |
 
 ### Sync config distante (push + pull)
@@ -48,8 +48,8 @@ La config agent-relevant (`branchStrategy`, `autoPush`, `postCommands`, `preview
 2. `git.assertIsRepo()` — vérifie que c'est un repo git
 3. `git.checkoutBranch(branchName)` — crée la branche
 4. Récupère `payload.compiled_prompt` (construit par le SaaS) — aucun build local
-5. **Attachment prefetch** (fixmyui ≥ 2.0.2, voir section dédiée) — normalise `attachments[]` (fallback `screenshot_url` unique pour SaaS < 2026-04-16), download de toutes les images dans `.fixmyui-tmp/` en parallèle, rewrite de chaque URL en chemin local dans le prompt
-6. `#runClaude(jobId, compiled_prompt)` — exécute Claude avec streaming
+5. **Attachment prefetch** (fixmyui ≥ 2.1.0, voir section dédiée) — normalise `attachments[]` (fallback `screenshot_url` unique pour SaaS < 2026-04-16), download de toutes les pièces jointes (images, PDF, fichiers texte/code) dans `.fixmyui-tmp/` en parallèle, rewrite de chaque URL en chemin local dans le prompt
+6. `#runClaude(jobId, compiled_prompt, claude_model)` — exécute Claude avec streaming, en passant `--model <slug>` si `claude_model` est défini et différent de `'auto'`
 7. `git.isDirty()` → `git.addAll()` → `git.commit()` — commit si changements
 8. `git.push()` — push si `autoPush`
 9. `saas.complete()` — rapport de succès
@@ -57,20 +57,21 @@ La config agent-relevant (`branchStrategy`, `autoPush`, `postCommands`, `preview
 
 En cas d'erreur : `saas.fail()` + `git.checkoutExisting(originalBranch)` (le cleanup des attachments est toujours exécuté).
 
-### Attachment prefetch (`ScreenshotPrefetcher.js`, fixmyui ≥ 2.0.2)
+### Attachment prefetch (`AttachmentPrefetcher.js`, fixmyui ≥ 2.1.0)
 
-Le SaaS injecte les URLs publiques des images (bucket R2/S3) directement dans `compiled_prompt` — une capture live prise par le widget, ou plusieurs images si le user a utilisé le bouton upload / le drag-and-drop (jusqu'à 10 par message). En `claude -p` sans TTY, Claude Code peut refuser de fetch le réseau (même en `acceptEdits`) car il n'a personne pour accorder la permission.
+Le SaaS injecte les URLs publiques des pièces jointes (bucket R2/S3) directement dans `compiled_prompt` — une capture live, des images, des PDF, des fichiers texte/code (`html`, `css`, `js`, `json`, `md`, `txt`, `csv`, `xml`, `svg`, `yaml`, `ts`, `tsx`, `jsx`, `vue`, `php`), jusqu'à 10 par message. En `claude -p` sans TTY, Claude Code peut refuser de fetch le réseau (même en `acceptEdits`) car il n'a personne pour accorder la permission.
 
-Solution auto-portante : l'agent **télécharge lui-même chaque image** avant de spawn Claude, puis remplace chaque URL par un chemin local. Claude utilise ensuite son outil `Read` (qui supporte nativement PNG/JPG/WebP/GIF) — aucune permission réseau requise.
+Solution auto-portante : l'agent **télécharge lui-même chaque pièce jointe** avant de spawn Claude, puis remplace chaque URL par un chemin local. Claude utilise ensuite son outil `Read` (qui supporte nativement images, PDF et texte) — aucune permission réseau requise.
 
-- **Répertoire** : `<repoPath>/.fixmyui-tmp/screenshot-<jobId>-<NN>.<ext>` (index zéro-paddé `00`, `01`, …)
+- **Répertoire** : `<repoPath>/.fixmyui-tmp/screenshot-<jobId>-<NN>.<ext>` (index zéro-paddé `00`, `01`, … — préfixe historique conservé pour compat).
 - **Git** : la ligne `.fixmyui-tmp/` est ajoutée à `.git/info/exclude` au premier job (exclusion **locale**, jamais committée). `git add -A` ne la voit pas.
-- **Parallélisme** : `Promise.all` sur tout le batch — une image qui échoue n'abort pas les autres.
-- **Garde-fous par image** : timeout 15 s, cap 20 Mo, vérification `content-type: image/*`, UUID-safe filename, cleanup dans `finally`.
-- **Fallback** : les images non téléchargées (404, DNS, timeout…) restent en URL dans le prompt et un warning est loggé. Claude retentera alors un `WebFetch` — cf. section permissions ci-dessous pour débloquer.
+- **Parallélisme** : `Promise.all` sur tout le batch — une pièce jointe qui échoue n'abort pas les autres.
+- **Garde-fous par fichier** : timeout 15 s, cap 30 Mo (headroom au-dessus du 20 Mo serveur), filename UUID-safe, cleanup dans `finally`. Le filtre `content-type: image/*` a été retiré en 2.1.0 — toute pièce jointe acceptée par le SaaS est téléchargée.
+- **Détection d'extension** : `EXT_FROM_CONTENT_TYPE` + `KNOWN_EXTENSIONS` couvrent toutes les familles supportées par le widget.
+- **Fallback** : les fichiers non téléchargés (404, DNS, timeout…) restent en URL dans le prompt et un warning est loggé. Claude retentera alors un `WebFetch` — cf. section permissions ci-dessous pour débloquer.
 - **Compat** : si le SaaS est antérieur au 2026-04-16 (`attachments` absent du payload), l'agent retombe sur `screenshot_url` et se comporte comme 2.0.1.
 
-API (module `src/agent/ScreenshotPrefetcher.js`) :
+API (module `src/agent/AttachmentPrefetcher.js`) :
 - `prefetchScreenshot(url, { repoPath, jobId, index })` → `{ localPath, cleanup }`
 - `prefetchAttachments(list, { repoPath, jobId, onError })` → `Array<{ url, localPath, cleanup }>` (seulement les succès)
 - `rewritePromptWithLocalScreenshot(prompt, url, localPath)` — une URL
@@ -116,8 +117,10 @@ Depuis fixmyui 2.0.0, la méthode statique `buildPrompt` n'existe plus dans ce f
 
 Commande spawned :
 ```
-claude -p "<prompt>" --output-format stream-json --verbose --permission-mode acceptEdits
+claude -p "<prompt>" --output-format stream-json --verbose --permission-mode acceptEdits [--model <slug>]
 ```
+
+Le flag `--model <slug>` est ajouté **uniquement** si l'option `claudeModel` du constructeur est définie et différente de `'auto'`. La valeur (par exemple `claude-opus-4-20250514`, `claude-3-5-sonnet-latest`, `claude-3-5-haiku-latest`) provient du payload `new-job` (`claude_model`). Côté SaaS la résolution est : override conversation → `default_claude_model` de l'installation → `'auto'`. La liste des modèles disponibles est récupérée dynamiquement depuis `GET https://api.anthropic.com/v1/models` (cache 24 h, fallback statique) par `App\Modules\Fixmyui\Services\AnthropicModelsService`.
 
 Le parsing stream-json gère les types d'événements :
 - `assistant` → content blocks (thinking, tool_use, text)
@@ -147,7 +150,7 @@ Client WebSocket basé sur `pusher-js` pour communiquer avec Laravel Reverb.
 
 | Événement | Payload | Description |
 |-----------|---------|-------------|
-| `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, screenshot_url, attachments, compiled_prompt }`) |
+| `job` | `object` | Nouveau job reçu (`{ job_id, message, page_url, screenshot_url, attachments, compiled_prompt, claude_model }`) |
 | `config-updated` | `object` | Config agent-relevant modifiée depuis le dashboard |
 | `connected` | — | Connexion WebSocket établie |
 | `disconnected` | — | Déconnexion WebSocket |

@@ -51,7 +51,7 @@ Agent reçoit le job sur private-fixmyui.agent.{installationId}
   │
   ├─ 2. récupère payload.compiled_prompt (déjà compilé côté SaaS par FixmyuiPromptBuilder)
   │
-  ├─ 3. spawn claude -p "<compiled_prompt>" --output-format stream-json --permission-mode acceptEdits
+  ├─ 3. spawn claude -p "<compiled_prompt>" --output-format stream-json --permission-mode acceptEdits [--model <slug>]
   │     │
   │     ├─ thinking → POST /agent/jobs/{id}/progress (type: thinking)
   │     ├─ action  → POST /agent/jobs/{id}/progress (type: action)
