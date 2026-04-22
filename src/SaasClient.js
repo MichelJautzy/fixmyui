@@ -17,7 +17,10 @@ export class SaasClient {
    *
    * @param {string} jobId
    * @param {string} message
-   * @param {'thinking'|'action'|'info'} [type]
+   * @param {'thinking'|'action'|'info'|'shell'|'error'} [type]
+   *   `error` is supported on SaaS >= 2026-04-21 (matches agent >= 2.2.0)
+   *   and is rendered red / pinned by the widget. Older SaaS versions will
+   *   reject it with HTTP 422 — the agent silently swallows the failure.
    */
   async progress(jobId, message, type = 'info') {
     return this.#post(`/api/fixmyui/agent/jobs/${jobId}/progress`, { message, type });
@@ -50,13 +53,25 @@ export class SaasClient {
    * Maps to POST /api/fixmyui/agent/jobs/{id}/fail
    *
    * @param {string} jobId
-   * @param {string} errorMessage
+   * @param {string} errorMessage   Short headline (`claude exited with code 1`)
+   * @param {object} [opts]
+   * @param {boolean} [opts.cancelled=false]
+   * @param {string|null} [opts.details]  Raw stderr/stdout tail or stack trace.
+   *   Persisted in `fixmyui_jobs.error_details` (longText) and revealed by the
+   *   widget's "Show details" toggle on the failed bubble. Truncated to ~64 KB
+   *   server-side. Optional — older SaaS versions ignore it gracefully.
    */
-  async fail(jobId, errorMessage, { cancelled = false } = {}) {
-    return this.#post(`/api/fixmyui/agent/jobs/${jobId}/fail`, {
+  async fail(jobId, errorMessage, { cancelled = false, details = null } = {}) {
+    const payload = {
       error: errorMessage,
       cancelled: !!cancelled,
-    });
+    };
+    if (typeof details === 'string' && details.length > 0) {
+      // Cap client-side at 60 KB to leave room for the rest of the JSON
+      // payload under typical body-size limits (server caps at 65 000 chars).
+      payload.details = details.length > 60_000 ? details.slice(-60_000) : details;
+    }
+    return this.#post(`/api/fixmyui/agent/jobs/${jobId}/fail`, payload);
   }
 
   /**

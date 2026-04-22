@@ -340,7 +340,12 @@ export class Agent {
         this.log(`[fixmyui] Job ${job_id} interrupted by cancellation (${err.message}).`);
       } else {
         this.log(`[fixmyui] Job ${job_id} failed: ${err.message}`);
-        await this.#saas.fail(job_id, err.message).catch(() => {});
+        // ClaudeRunner enriches its errors with `details` (formatted
+        // stderr/stdout tail). Other errors (git, prefetch…) only have
+        // `.message`; in that case we ship the JS stack as a fallback so
+        // the SaaS / widget always have something actionable to show.
+        const details = err?.details ?? (err?.stack ? `Stack trace:\n${err.stack}` : null);
+        await this.#saas.fail(job_id, err.message, { details }).catch(() => {});
       }
 
       if (this.#originalBranch && branchStrategy !== 'local-branch') {
@@ -403,6 +408,15 @@ export class Agent {
         if (!text.trim()) return;
         this.log(`  [info] ${text.slice(0, 100)}`);
         await this.#saas.progress(jobId, text.slice(0, 900), 'info').catch(() => {});
+      });
+
+      // stderr from Claude is promoted to a dedicated 'error' progress
+      // event so the widget can pin it / colour it red instead of
+      // hiding it among regular info bubbles.
+      runner.on('stderr', async (text) => {
+        if (!text.trim()) return;
+        this.log(`  [stderr] ${text.slice(0, 200)}`);
+        await this.#saas.progress(jobId, text.slice(0, 3800), 'error').catch(() => {});
       });
 
       runner.on('error', (err) => {

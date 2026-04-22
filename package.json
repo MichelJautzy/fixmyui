@@ -1,6 +1,6 @@
 {
   "name": "fixmyui",
-  "version": "2.1.0",
+  "version": "2.2.0",
   "description": "FixMyUI agent — connects your staging server to fixmyui.com and lets PMs ship UI changes via Claude Code.",
   "type": "module",
   "bin": {

@@ -10,6 +10,45 @@ const CLAUDE_PERMISSION_MODES = new Set([
   'auto',
 ]);
 
+// Maximum tail (in bytes) we keep from Claude's stderr/stdout to attach to a
+// crash report. 4 KB is enough to surface auth errors, model-not-found, quota
+// messages, MCP failures, etc. without overflowing the SaaS payload.
+const STREAM_TAIL_BYTES = 4096;
+
+/**
+ * Bounded ring-buffer that keeps only the last N bytes of a streamed text
+ * source. Used to capture the tail of Claude's stderr/stdout so we can ship
+ * it to the SaaS when the process exits non-zero — without keeping every
+ * line in memory.
+ */
+class TailBuffer {
+  #limit;
+  #parts = [];
+  #length = 0;
+
+  constructor(limit = STREAM_TAIL_BYTES) {
+    this.#limit = limit;
+  }
+
+  push(chunk) {
+    if (!chunk) return;
+    const text = String(chunk);
+    if (!text) return;
+    this.#parts.push(text);
+    this.#length += text.length;
+    while (this.#length > this.#limit && this.#parts.length > 1) {
+      const dropped = this.#parts.shift();
+      this.#length -= dropped.length;
+    }
+  }
+
+  toString() {
+    const joined = this.#parts.join('');
+    if (joined.length <= this.#limit) return joined;
+    return joined.slice(joined.length - this.#limit);
+  }
+}
+
 /**
  * Spawns the `claude` CLI and parses its `--output-format stream-json` output.
  *
@@ -17,8 +56,12 @@ const CLAUDE_PERMISSION_MODES = new Set([
  *   'thinking'  (text)    — Claude is reasoning internally
  *   'action'    (text)    — Claude is writing code / using a tool
  *   'info'      (text)    — Other informational output
+ *   'stderr'    (text)    — A line from Claude's stderr (warning or fatal)
  *   'result'    (text)    — Final summary when Claude finishes
- *   'error'     (Error)   — Process error or non-zero exit
+ *   'error'     (Error)   — Process error or non-zero exit. The Error is
+ *                           enriched with `code`, `stderrTail`, `stdoutTail`
+ *                           and an already-formatted `details` string suitable
+ *                           for forwarding to the SaaS as a fail payload.
  *   'done'      ()        — Process exited cleanly
  */
 export class ClaudeRunner extends EventEmitter {
@@ -27,6 +70,8 @@ export class ClaudeRunner extends EventEmitter {
   #permissionMode;
   #claudeModel;
   #tokenUsage = { input: 0, output: 0 };
+  #stderrTail = new TailBuffer();
+  #stdoutTail = new TailBuffer();
 
   /**
    * @param {import('../Config.js').Config} config
@@ -80,6 +125,7 @@ export class ClaudeRunner extends EventEmitter {
 
     this.#proc.stdout.setEncoding('utf8');
     this.#proc.stdout.on('data', (chunk) => {
+      this.#stdoutTail.push(chunk);
       buffer += chunk;
       const lines = buffer.split('\n');
       buffer = lines.pop(); // keep incomplete last line
@@ -96,29 +142,73 @@ export class ClaudeRunner extends EventEmitter {
 
     this.#proc.stderr.setEncoding('utf8');
     this.#proc.stderr.on('data', (chunk) => {
-      // Non-fatal: emit as info so the PM can see warnings
+      // Buffer raw bytes so we can report the full tail on crash, even
+      // when there is no trailing newline (Claude writes to stderr in
+      // chunks, not always line-delimited).
+      this.#stderrTail.push(chunk);
       const text = chunk.trim();
-      if (text) this.emit('info', `[stderr] ${text}`);
+      if (text) this.emit('stderr', text);
     });
 
     this.#proc.on('error', (err) => {
       if (err.code === 'ENOENT') {
-        this.emit('error', new Error(
-          '`claude` command not found. ' +
-          'Install Claude Code: https://docs.anthropic.com/en/docs/claude-code'
+        this.emit('error', this.#buildCrashError(
+          '`claude` command not found. Install Claude Code: https://docs.anthropic.com/en/docs/claude-code',
+          null,
         ));
       } else {
-        this.emit('error', err);
+        this.emit('error', this.#buildCrashError(err.message || String(err), null));
       }
     });
 
     this.#proc.on('close', (code) => {
       if (code !== 0) {
-        this.emit('error', new Error(`claude exited with code ${code}`));
+        this.emit('error', this.#buildCrashError(`claude exited with code ${code}`, code));
       } else {
         this.emit('done', resultText, this.#tokenUsage);
       }
     });
+  }
+
+  /**
+   * Build a rich Error suitable for forwarding to the SaaS:
+   *   .message       short headline shown in the widget bubble
+   *   .code          process exit code (null for spawn errors)
+   *   .stderrTail    last STREAM_TAIL_BYTES of Claude's stderr (raw)
+   *   .stdoutTail    last STREAM_TAIL_BYTES of Claude's stdout (raw)
+   *   .details       human-readable dump of stderr (with stdout fallback)
+   *                  — already formatted, ready to ship to the API
+   */
+  #buildCrashError(headline, code) {
+    const err = new Error(headline);
+    err.code = code;
+    err.stderrTail = this.#stderrTail.toString();
+    err.stdoutTail = this.#stdoutTail.toString();
+    err.details = this.#formatCrashDetails(err);
+    return err;
+  }
+
+  #formatCrashDetails(err) {
+    const sections = [];
+    const stderr = (err.stderrTail || '').trim();
+    const stdout = (err.stdoutTail || '').trim();
+
+    if (stderr) {
+      sections.push(`stderr (last ${STREAM_TAIL_BYTES} bytes):\n${stderr}`);
+    }
+    // Only include stdout when stderr is empty — a successful stream-json
+    // run produces lots of structured stdout that would just be noise here.
+    if (!stderr && stdout) {
+      sections.push(`stdout (last ${STREAM_TAIL_BYTES} bytes):\n${stdout}`);
+    }
+
+    if (sections.length === 0) {
+      return 'No output was captured from the `claude` process before it exited. '
+        + 'Try running `claude -p "ping"` in the same shell as the agent to verify '
+        + 'authentication and CLI version.';
+    }
+
+    return sections.join('\n\n');
   }
 
   /**
